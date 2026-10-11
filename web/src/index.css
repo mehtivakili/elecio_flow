@@ -1,0 +1,142 @@
+@font-face { font-family: Vazirmatn; font-weight: 100 900; font-display: swap; src: url('/fonts/Vazirmatn-Variable.woff2') format('woff2'); }
+@font-face { font-family: IRANSansX; font-weight: 400; font-display: swap; src: url('/fonts/IRANSansX-Regular.woff2') format('woff2'); }
+@font-face { font-family: IRANSansX; font-weight: 500; font-display: swap; src: url('/fonts/IRANSansX-Medium.woff2') format('woff2'); }
+@font-face { font-family: IRANSansX; font-weight: 600; font-display: swap; src: url('/fonts/IRANSansX-DemiBold.woff2') format('woff2'); }
+@font-face { font-family: IRANSansX; font-weight: 700; font-display: swap; src: url('/fonts/IRANSansX-Bold.woff2') format('woff2'); }
+@font-face { font-family: IRANSansX; font-weight: 800; font-display: swap; src: url('/fonts/IRANSansX-ExtraBold.woff2') format('woff2'); }
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  /* The animated gradient Elecio Manager uses for the selected menu item. */
+  --nav-active: linear-gradient(45deg, hsla(201, 11%, 41%, 0.7) 0%, hsla(221, 70%, 69%, 1) 50%, hsla(201, 11%, 41%, 0.7) 100%);
+  --chart-1: #6690E3;
+  --chart-2: #BE7C38;
+}
+
+html, body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  background: #253237;
+  color: #E0FBFC;
+  font-family: IRANSansX, Vazirmatn, Tahoma, sans-serif;
+  /* IRANSansX stylistic set 02 renders Persian digits */
+  font-feature-settings: "ss02";
+  -webkit-font-smoothing: antialiased;
+}
+
+.ltr { direction: ltr; unicode-bidi: isolate; }
+.num { font-feature-settings: "ss02", "tnum"; }
+
+/* ───── Background grid with radial fade (GridBackground from source 2) ───── */
+.grid-bg {
+  background-color: #253237;
+  background-image:
+    linear-gradient(to right, rgba(224, 251, 252, 0.045) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(224, 251, 252, 0.045) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+.grid-bg::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 60% 20%, transparent 10%, #253237 75%);
+}
+.aurora {
+  position: fixed;
+  pointer-events: none;
+  width: 520px;
+  height: 520px;
+  border-radius: 9999px;
+  filter: blur(120px);
+  opacity: 0.16;
+}
+
+@layer components {
+  .glass {
+    @apply rounded-2xl border border-white/[0.06] bg-ink/[0.045] shadow-glass backdrop-blur-md;
+  }
+  .glass-strong {
+    @apply rounded-2xl border border-white/[0.08] bg-[#2b3a40]/95 shadow-glass backdrop-blur-xl;
+  }
+  .nav-active {
+    background-image: var(--nav-active);
+    background-size: 200% 200%;
+    @apply animate-bg-move text-night;
+  }
+  .field {
+    @apply w-full rounded-xl border border-line bg-deep/70 px-3 py-2 text-sm text-ink placeholder:text-mist/50
+      outline-none transition focus:border-iris focus:ring-2 focus:ring-iris/25 disabled:opacity-60;
+  }
+  .label { @apply mb-1.5 block text-xs font-medium text-mist; }
+  .chip { @apply inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-semibold; }
+  .tbl { @apply w-full text-sm; }
+  .tbl th { @apply whitespace-nowrap border-b border-line/80 px-3 py-2.5 text-right text-xs font-medium text-mist; }
+  .tbl td { @apply border-b border-line/40 px-3 py-2.5 align-middle; }
+  .tbl tbody tr { @apply transition-colors hover:bg-ink/[0.03]; }
+  .kbd { @apply rounded-md border border-line bg-deep px-1.5 py-0.5 text-[10px] text-mist; }
+}
+
+/* Thin, quiet scrollbars */
+* { scrollbar-width: thin; scrollbar-color: #5C6B73 transparent; }
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-thumb { background: #5C6B7399; border-radius: 99px; }
+*::-webkit-scrollbar-track { background: transparent; }
+
+/* Glow border — the HoverBorderGradient CTA from source 2, done in CSS */
+@property --angle { syntax: '<angle>'; initial-value: 0deg; inherits: false; }
+.glow-btn {
+  position: relative;
+  isolation: isolate;
+  background: rgba(255, 73, 158, 0.14);
+  border-radius: 12px;
+}
+.glow-btn::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  padding: 1px;
+  border-radius: inherit;
+  background: conic-gradient(from var(--angle), transparent 0deg, #ffffff 40deg, transparent 90deg, transparent 180deg, #FF499E 230deg, transparent 290deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: border-spin 4s linear infinite;
+}
+.glow-btn:hover { background: rgba(255, 73, 158, 0.24); box-shadow: 0 0 24px -6px #FF499E; }
+@keyframes border-spin { to { --angle: 360deg; } }
+
+/* Leaflet in the dark theme */
+.leaflet-container { background: #1C272B; font-family: inherit; }
+.leaflet-tile-pane { filter: brightness(0.62) contrast(1.1) saturate(0.55) hue-rotate(170deg) invert(0.92); }
+.leaflet-popup-content-wrapper, .leaflet-popup-tip { background: #2b3a40; color: #E0FBFC; box-shadow: 0 10px 30px rgba(0,0,0,.5); }
+.leaflet-popup-content { margin: 12px 14px; font-size: 13px; line-height: 1.7; }
+.leaflet-control-attribution { background: rgba(28,39,43,.7) !important; color: #9DB4C0 !important; }
+.leaflet-control-attribution a { color: #779BE7 !important; }
+.leaflet-bar a { background: #2b3a40; color: #E0FBFC; border-color: #2E424D; }
+.map-pin {
+  display: flex; align-items: center; justify-content: center; border-radius: 9999px;
+  border: 2px solid #253237; box-shadow: 0 2px 10px rgba(0,0,0,.45); color: #10181b; font-weight: 700; font-size: 11px;
+}
+
+@media print {
+  .no-print { display: none !important; }
+  body, .grid-bg { background: #fff !important; color: #111 !important; }
+}
+
+/* Native selects: consistent chevron on the RTL "end" side */
+select.field {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-left: 2rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%239DB4C0' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: left 0.7rem center;
+}
+select.field option { background: #1C272B; color: #E0FBFC; }

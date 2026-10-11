@@ -1,0 +1,21 @@
+{
+  "name": "elecio-flow",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Elecio Flow — Integrated Business Operations Platform (CRM · OMS · SCM · WMS · MES · Service · ERP)",
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c cyan,magenta \"npm:dev -w server\" \"npm:dev -w web\"",
+    "build": "npm run build -w web",
+    "start": "npm run start -w server",
+    "seed": "npm run seed -w server",
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w web"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

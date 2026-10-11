@@ -1,0 +1,7 @@
+node_modules/
+dist/
+server/data/
+*.log
+.env
+/source1_(crm_ideas)
+/source2_(ui_ideas)
