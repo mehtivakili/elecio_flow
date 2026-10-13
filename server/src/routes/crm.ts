@@ -24,7 +24,7 @@ crmRouter.get('/contacts', h((req) => {
   const s = getSettings(req.user.orgId).scoring;
   let sql = 'SELECT * FROM contacts c WHERE org_id = ?';
   const params: (string | number)[] = [req.user.orgId];
-  if (search) { sql += ' AND search LIKE ?'; params.push(`%${normalizeSearch(search)}%`); }
+  if (search) { sql += ' AND normalize_search(search) LIKE ?'; params.push(`%${normalizeSearch(search)}%`); }
   if (stage) { sql += ' AND stage = ?'; params.push(stage); }
   if (source) { sql += ' AND lead_source = ?'; params.push(source); }
   if (owner) { sql += ' AND owner_id = ?'; params.push(owner); }

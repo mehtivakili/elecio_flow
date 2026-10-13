@@ -1,14 +1,15 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { GitBranch, Star, PhoneCall, UserPlus } from 'lucide-react';
+import { GitBranch, Star, PhoneCall, UserPlus, LayoutGrid, List } from 'lucide-react';
 import clsx from 'clsx';
 import { post } from '../../lib/api';
 import { useAction, useApi } from '../../lib/hooks';
 import { useSession } from '../../lib/session';
-import { Button, PageHeader, SearchBox, Select, Spinner, useConfirm } from '../../components/ui';
+import { BoardJump, Filters, PageHeader, SearchBox, Select, Spinner, Tabs, useConfirm } from '../../components/ui';
 import { ContactFormModal, LogTouchModal, NextActionTag } from '../../components/crm';
 import { ScoreMeter } from '../../components/charts';
 import { compactMoney, num, relative } from '../../lib/format';
+import { matchesSearch } from '@shared/search';
 
 export default function PipelinePage() {
   const { settings, users, userName } = useSession();
@@ -20,14 +21,16 @@ export default function PipelinePage() {
   const [over, setOver] = useState<string | null>(null);
   const [touch, setTouch] = useState<any>(null);
   const [creating, setCreating] = useState(false);
+  const [view, setView] = useState<'board' | 'list'>(() => {
+    try { return localStorage.getItem('pipeline_view') === 'list' ? 'list' : 'board'; } catch { return 'board'; }
+  });
+  useEffect(() => { try { localStorage.setItem('pipeline_view', view); } catch { /* ignore */ } }, [view]);
   const move = useAction((body: { id: string; stage: string; lostReason?: string }) => post(`/contacts/${body.id}/stage`, body), { success: 'مرحله به‌روز شد' });
 
   const contacts = useMemo(() => data.filter((c) =>
-    (!owner || c.ownerId === owner) && (!search || `${c.name} ${c.company}`.includes(search))), [data, owner, search]);
+    (!owner || c.ownerId === owner) && matchesSearch(`${c.name} ${c.company}`, search)), [data, owner, search]);
 
-  const drop = async (stage: string) => {
-    const c = data.find((x) => x.id === dragId);
-    setDragId(null); setOver(null);
+  const moveContact = async (c: any, stage: string) => {
     if (!c || c.stage === stage) return;
     if (stage === 'lost') {
       const reason = await confirm({ title: `از دست رفتن «${c.name}»`, danger: true, confirm: 'ثبت', body: `دلایل رایج: ${settings.lostReasons.join('، ')}`, input: { label: 'دلیل', required: true } });
@@ -35,6 +38,12 @@ export default function PipelinePage() {
       return;
     }
     move.mutate({ id: c.id, stage });
+  };
+
+  const drop = async (stage: string) => {
+    const c = data.find((x) => x.id === dragId);
+    setDragId(null); setOver(null);
+    await moveContact(c, stage);
   };
 
   if (isLoading) return <Spinner />;
@@ -45,41 +54,98 @@ export default function PipelinePage() {
         title="قیف فروش"
         subtitle="کارت‌ها را بین مراحل بکشید — هر کارت بر اساس امتیاز مرتب شده است"
         actions={<>
-          <SearchBox value={search} onChange={setSearch} className="w-56" />
-          <Select className="w-44" value={owner} onChange={(e) => setOwner(e.target.value)}>
+          <Tabs
+            value={view}
+            onChange={setView}
+            tabs={[{ key: 'board', label: 'کارت', icon: LayoutGrid }, { key: 'list', label: 'لیست', icon: List }]}
+          />
+          <div className="hidden md:contents">
+            <SearchBox value={search} onChange={setSearch} className="w-56" />
+            <Select className="w-44" value={owner} onChange={(e) => setOwner(e.target.value)}>
+              <option value="">همه کارشناسان</option>
+              {users.map((u) => <option key={u.id} value={u.id}>{u.fullName}</option>)}
+            </Select>
+          </div>
+        </>}
+        fab={{ label: 'سرنخ جدید', icon: UserPlus, onClick: () => setCreating(true) }}
+      />
+      <div className="mb-3 flex items-center gap-2 md:hidden">
+        <SearchBox value={search} onChange={setSearch} className="min-w-0 flex-1" placeholder="نام یا شرکت…" />
+        <Filters count={owner ? 1 : 0} onReset={() => setOwner('')}>
+          <Select value={owner} onChange={(e) => setOwner(e.target.value)}>
             <option value="">همه کارشناسان</option>
             {users.map((u) => <option key={u.id} value={u.id}>{u.fullName}</option>)}
           </Select>
-          <Button variant="glow" icon={UserPlus} onClick={() => setCreating(true)}>سرنخ جدید</Button>
-        </>}
-      />
-      <div className="flex gap-4 overflow-x-auto pb-4">
+        </Filters>
+      </div>
+      {view === 'list' ? (
+        <div className="glass overflow-hidden">
+          <div className="hidden grid-cols-[minmax(180px,1.5fr)_minmax(130px,1fr)_88px_minmax(150px,1.2fr)_110px_36px] gap-3 border-b border-line/70 bg-deep/50 px-4 py-2.5 text-xs text-mist md:grid">
+            <span>مشتری</span><span>مرحله</span><span>امتیاز</span><span>اقدام بعدی</span><span>کارشناس</span><span />
+          </div>
+          <div className="divide-y divide-line/60">
+            {contacts.slice().sort((a, b) => b.score - a.score).map((c) => {
+              const stage = settings.lifecycleStages.find((s) => s.key === c.stage);
+              return (
+                <div key={c.id} className="relative grid gap-2 px-3 py-3 transition hover:bg-ink/[0.035] md:grid-cols-[minmax(180px,1.5fr)_minmax(130px,1fr)_88px_minmax(150px,1.2fr)_110px_36px] md:items-center md:gap-3 md:px-4 md:py-2">
+                  <Link to={`/crm/contacts/${c.id}`} className="min-w-0">
+                    <div className="flex items-center gap-1.5 truncate text-sm font-semibold text-ink hover:text-iris">
+                      {!!c.starred && <Star size={12} className="shrink-0 fill-amber text-amber" />}{c.name}
+                    </div>
+                    <div className="truncate text-[11px] text-mist">{c.company || c.addresses?.[0]?.county || '—'} · {c.lastContactAt ? relative(c.lastContactAt) : 'بدون تماس'}</div>
+                  </Link>
+                  <Select
+                    aria-label={`مرحله ${c.name}`}
+                    className="h-8 py-0 text-xs"
+                    value={c.stage}
+                    onChange={(e) => moveContact(c, e.target.value)}
+                    style={{ borderColor: `${stage?.color ?? '#779BE7'}66` }}
+                  >
+                    {settings.lifecycleStages.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+                  </Select>
+                  <div className="hidden md:block"><ScoreMeter score={c.score} hot={settings.scoring.hotThreshold} warm={settings.scoring.warmThreshold} /></div>
+                  <div className="min-w-0">{c.nextAction ? <NextActionTag action={c.nextAction} /> : <span className="text-xs text-mist">بدون اقدام</span>}</div>
+                  <div className="hidden truncate text-xs text-mist md:block">{userName(c.ownerId)}</div>
+                  <button onClick={() => setTouch(c)} className="absolute left-5 mt-0.5 rounded-lg p-1.5 text-mist hover:bg-iris/20 hover:text-iris md:static" title="ثبت ارتباط"><PhoneCall size={15} /></button>
+                </div>
+              );
+            })}
+            {contacts.length === 0 && <div className="py-14 text-center text-sm text-mist">موردی با این فیلتر پیدا نشد</div>}
+          </div>
+        </div>
+      ) : <>
+      <BoardJump stages={settings.lifecycleStages.map((s) => ({ key: s.key, label: s.label, color: s.color, count: contacts.filter((c) => c.stage === s.key).length }))} />
+      <div
+        className="board -mx-3 flex gap-2.5 overflow-x-auto px-3 pb-4 lg:-mx-6 lg:px-6 xl:grid xl:overflow-x-visible"
+        style={{ gridTemplateColumns: `repeat(${settings.lifecycleStages.length}, minmax(0, 1fr))` }}
+      >
         {settings.lifecycleStages.map((stage) => {
           const cards = contacts.filter((c) => c.stage === stage.key);
           const value = cards.reduce((s, c) => s + (c.openOrderValue || c.estimatedValue || 0), 0);
           return (
             <div
               key={stage.key}
+              data-col={stage.key}
               onDragOver={(e) => { e.preventDefault(); setOver(stage.key); }}
               onDragLeave={() => setOver((o) => (o === stage.key ? null : o))}
               onDrop={() => drop(stage.key)}
-              className={clsx('glass flex w-[290px] shrink-0 flex-col transition', over === stage.key && 'border-iris/60 shadow-glow')}
+              className={clsx('glass flex w-[232px] shrink-0 flex-col transition xl:w-auto xl:min-w-0', over === stage.key && 'border-iris/60 shadow-glow')}
             >
-              <div className="flex items-center justify-between gap-2 border-b border-line/60 px-4 py-3" style={{ boxShadow: `inset 0 3px 0 ${stage.color}` }}>
+              <div className="flex items-center justify-between gap-1.5 border-b border-line/60 px-3 py-2.5" style={{ boxShadow: `inset 0 3px 0 ${stage.color}` }}>
                 <div>
                   <div className="text-sm font-semibold text-ink">{stage.label}</div>
                   <div className="num text-[11px] text-mist">{compactMoney(value)} {settings.company.currency}</div>
                 </div>
                 <span className="num rounded-full px-2 py-0.5 text-xs font-bold text-night" style={{ background: stage.color }}>{num(cards.length)}</span>
               </div>
-              <div className="flex max-h-[calc(100vh-260px)] min-h-[200px] flex-col gap-2.5 overflow-y-auto p-3">
+              <div className="flex min-h-[160px] flex-col gap-2 p-2.5 md:max-h-[calc(100vh-250px)] md:min-h-[200px] md:overflow-y-auto">
                 {cards.map((c) => (
                   <div
                     key={c.id}
                     draggable
                     onDragStart={() => setDragId(c.id)}
                     onDragEnd={() => { setDragId(null); setOver(null); }}
-                    className={clsx('cursor-grab rounded-xl border border-white/[0.06] bg-deep/70 p-3 transition hover:border-iris/40 active:cursor-grabbing', dragId === c.id && 'opacity-40')}
+                    className={clsx('cursor-grab rounded-xl border border-white/[0.06] bg-deep/70 p-2.5 transition hover:border-iris/40 active:cursor-grabbing', dragId === c.id && 'opacity-40')}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <Link to={`/crm/contacts/${c.id}`} className="min-w-0">
@@ -97,6 +163,9 @@ export default function PipelinePage() {
                       <span>{c.lastContactAt ? relative(c.lastContactAt) : 'بدون تماس'}</span>
                     </div>
                     {c.stage === 'lost' && c.lostReason && <div className="mt-1.5 text-[11px] text-rose">دلیل: {c.lostReason}</div>}
+                    <Select aria-label={`انتقال ${c.name}`} className="mt-2.5 !min-h-[38px] py-1 text-xs md:hidden" value={c.stage} onChange={(e) => moveContact(c, e.target.value)}>
+                      {settings.lifecycleStages.map((s) => <option key={s.key} value={s.key}>انتقال به: {s.label}</option>)}
+                    </Select>
                   </div>
                 ))}
                 {cards.length === 0 && <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-line/70 py-8 text-xs text-mist">کارتی اینجا رها کنید</div>}
@@ -105,6 +174,7 @@ export default function PipelinePage() {
           );
         })}
       </div>
+      </>}
       <LogTouchModal open={!!touch} onClose={() => setTouch(null)} contact={touch} />
       <ContactFormModal open={creating} onClose={() => setCreating(false)} />
     </div>

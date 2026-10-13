@@ -30,15 +30,15 @@ export default function TasksPage() {
       <PageHeader icon={ListChecks} title="کارها" subtitle="کارهای داخلی تیم — قابل اتصال به مشتری، سفارش، خرید یا تیکت"
         actions={<>
           <Tabs value={scope} onChange={setScope} tabs={[{ key: 'mine', label: 'کارهای من' }, { key: 'all', label: 'همه تیم' }]} />
-          <Button variant="glow" icon={Plus} onClick={() => setAdding(true)}>کار جدید</Button>
-        </>} />
+        </>}
+        fab={{ label: 'کار جدید', icon: Plus, onClick: () => setAdding(true) }} />
       {isLoading ? <Spinner /> : list.length === 0 ? <Card><Empty icon={ListChecks} title="کاری ثبت نشده" /></Card> : (
         <div className="grid gap-5 lg:grid-cols-3">
           {cols.map((c) => (
             <Card key={c.key} title={c.label} pad={false} bodyClass="space-y-2 p-3">
               {list.filter((t) => t.status === c.key).map((t) => (
                 <div key={t.id} className="group flex items-start gap-3 rounded-xl bg-deep/60 p-3">
-                  <button onClick={() => toggle.mutate(t)} className="mt-0.5 text-mist hover:text-mint" aria-label="تغییر وضعیت">
+                  <button onClick={() => toggle.mutate(t)} className="-m-1.5 p-1.5 text-mist hover:text-mint" aria-label="تغییر وضعیت">
                     {t.status === 'done' ? <CheckCircle2 size={18} className="text-mint" /> : <Circle size={18} />}
                   </button>
                   <div className="min-w-0 flex-1">
@@ -50,7 +50,7 @@ export default function TasksPage() {
                       {t.refType && t.refId && REF_LINK[t.refType] && <Link to={REF_LINK[t.refType] + t.refId} className="text-iris">مشاهده مرجع</Link>}
                     </div>
                   </div>
-                  <div className="flex opacity-0 transition group-hover:opacity-100">
+                  <div className="flex transition md:opacity-0 md:group-hover:opacity-100">
                     {t.status === 'todo' && <Button size="sm" variant="ghost" icon={Timer} title="شروع" onClick={() => start.mutate(t)} />}
                     <Button size="sm" variant="ghost" icon={Trash2} onClick={() => remove.mutate(t.id)} />
                   </div>

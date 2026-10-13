@@ -40,7 +40,7 @@ export default function DashboardPage() {
   const unitsBy = Object.fromEntries(data.unitsByStatus.map((u: any) => [u.status, u.n]));
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       <PageHeader
         icon={LayoutDashboard}
         title={`${greet}، ${me.fullName}`}
@@ -53,12 +53,12 @@ export default function DashboardPage() {
             <Route size={18} className="text-amber" />
             <div><h2 className="text-sm font-semibold text-ink">فرآیند تأمین محصول</h2><p className="text-[11px] text-mist">از سفارش تا تحویل و پشتیبانی</p></div>
           </div>
-          <Link to="/operations/product-flow" className="flex items-center gap-1 text-xs font-medium text-iris hover:text-ink">مشاهده جزئیات و چک‌لیست‌ها <ChevronLeft size={14} /></Link>
+          <Link to="/operations/product-flow" className="flex items-center gap-1 text-xs font-medium text-iris hover:text-ink"><span className="hidden sm:inline">مشاهده جزئیات و چک‌لیست‌ها</span><span className="sm:hidden">جزئیات</span> <ChevronLeft size={14} /></Link>
         </div>
-        <div className="grid grid-cols-2 gap-px bg-line/40 md:grid-cols-3 xl:grid-cols-6">
+        <div className="no-scrollbar flex snap-x snap-mandatory gap-px overflow-x-auto bg-line/40 md:grid md:grid-cols-3 md:overflow-visible xl:grid-cols-6">
           {settings.productFlow.map((step, index) => {
             const StepIcon = PRODUCT_FLOW_ICONS[step.icon];
-            return <Link key={step.id} to={step.to} className="group relative min-h-[128px] bg-deep/65 p-3 transition hover:bg-ink/[0.06]">
+            return <Link key={step.id} to={step.to} className="group relative min-h-[118px] w-[38%] shrink-0 snap-start bg-deep/65 p-3 transition hover:bg-ink/[0.06] active:bg-ink/[0.08] md:min-h-[128px] md:w-auto">
               <div className="flex items-center justify-between">
                 <span className="num flex h-7 w-7 items-center justify-center rounded-xl text-xs font-extrabold text-night" style={{ background: step.color }}>{index + 1}</span>
                 <StepIcon size={17} style={{ color: step.color }} />
@@ -70,14 +70,14 @@ export default function DashboardPage() {
         </div>
       </section>
 
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="stat-rail grid grid-cols-2 gap-4 md:grid-cols-4">
         <Stat label="وصولی این ماه" value={compactMoney(k.revenueMonth)} hint={`فروش قطعی ماه: ${compactMoney(k.bookedMonth)} ${cur}`} icon={Wallet} tone="mint" onClick={() => navigate('/finance')} />
         <Stat label="فروش‌های باز" value={num(k.openOrders)} hint={`ارزش: ${compactMoney(k.openOrdersValue)} ${cur}`} icon={ShoppingCart} tone="lilac" alert={k.lateOrders > 0} onClick={() => navigate('/sales/orders')} />
         <Stat label="مطالبات" value={compactMoney(k.receivable)} hint={`${cur} — مانده حساب مشتریان`} icon={HandCoins} tone="amber" onClick={() => navigate('/finance')} />
         <Stat label="سرنخ‌های داغ" value={num(k.hotLeads)} hint={`${num(k.warmLeads)} گرم · ${num(k.newLeadsMonth)} سرنخ جدید این ماه`} icon={Flame} tone="rose" onClick={() => navigate('/crm/leads')} />
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1.25fr_1fr]">
+      <div className="grid gap-4 md:gap-6 xl:grid-cols-[1.25fr_1fr]">
         <Card title="نیاز به اقدام" subtitle="استثناهای همه ماژول‌ها در یک فهرست" icon={BellRing} pad={false} bodyClass="p-2">
           {data.alerts.length === 0
             ? <Empty title="همه‌چیز طبق برنامه است" hint="هیچ تأخیر، کسری یا نقض SLA فعالی وجود ندارد." />
@@ -99,7 +99,7 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[1.4fr_1fr]">
+      <div className="grid gap-4 md:gap-6 xl:grid-cols-[1.4fr_1fr]">
         <Card title="جریان نقدی ماهانه" subtitle={`وصولی در برابر هزینه‌ها (${cur})`} icon={Wallet}>
           <GroupedBars
             data={data.series}
@@ -118,7 +118,7 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-4 md:gap-6 lg:grid-cols-3">
         <Card title="سفارش‌های فروش در هر مرحله" subtitle={`ارزش سفارش‌های مشتریان (${cur})`} icon={ShoppingCart}>
           <BarList
             rows={data.pipelineStages.filter((s: any) => !s.final).map((s: any) => ({ key: s.key, label: s.label, value: s.value, color: s.color, hint: `(${num(s.count)})` }))}
@@ -163,7 +163,7 @@ function AgendaBlock({ title, icon: Icon, items, empty }: {
         <ul className="space-y-1">
           {items.map((it) => (
             <li key={it.id}>
-              <Link to={it.to} className="flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-sm hover:bg-ink/[0.05]">
+              <Link to={it.to} className="flex items-center justify-between gap-3 rounded-lg px-2 py-2.5 text-sm hover:bg-ink/[0.05] active:bg-ink/[0.07] md:py-1.5">
                 <span className="min-w-0"><span className="block truncate text-ink">{isolateCodes(it.title)}</span><span className="block truncate text-xs text-mist">{it.sub}</span></span>
                 <span className={clsx('shrink-0 text-xs', it.late ? 'text-rose' : 'text-mist')}>{relative(it.when)}</span>
               </Link>

@@ -4,9 +4,11 @@ import {
   type SelectHTMLAttributes, type TextareaHTMLAttributes,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { Loader2, X, Inbox, Star } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Loader2, X, Inbox, Star, SlidersHorizontal } from 'lucide-react';
 import clsx from 'clsx';
 import { initials, num } from '../lib/format';
+import { useIsMobile } from '../lib/media';
 
 type Icon = ComponentType<{ size?: number; className?: string; strokeWidth?: number }>;
 
@@ -40,8 +42,9 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       className={clsx(
         'group inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl font-medium transition-all',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-iris/60 disabled:cursor-not-allowed disabled:opacity-50',
-        size === 'sm' ? 'h-8 px-3 text-xs' : size === 'lg' ? 'h-11 px-5 text-[15px]' : 'h-9 px-4 text-sm',
-        !children && (size === 'sm' ? 'w-8 px-0' : 'w-9 px-0'),
+        size === 'sm' ? 'h-9 px-3 text-xs md:h-8' : size === 'lg' ? 'h-12 px-5 text-[15px] md:h-11' : 'h-10 px-4 text-sm md:h-9',
+        !children && (size === 'sm' ? 'w-9 px-0 md:w-8' : 'w-10 px-0 md:w-9'),
+        'active:scale-[.97]',
         VARIANTS[variant],
         className,
       )}
@@ -64,7 +67,7 @@ export function Card({
   return (
     <section className={clsx('glass animate-fade-up', className)}>
       {(title || actions) && (
-        <header className="flex flex-wrap items-center justify-between gap-3 px-5 pt-4">
+        <header className="flex flex-wrap items-center justify-between gap-3 px-4 pt-4 md:px-5">
           <div className="flex min-w-0 items-center gap-2.5">
             {IconCmp && (
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-iris/15 text-iris">
@@ -79,30 +82,70 @@ export function Card({
           {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
         </header>
       )}
-      <div className={clsx(pad && 'p-5', !pad && (title || actions) && 'pt-3', bodyClass)}>{children}</div>
+      <div className={clsx(pad && 'p-4 md:p-5', !pad && (title || actions) && 'pt-3', bodyClass)}>{children}</div>
     </section>
   );
 }
 
+export interface FabAction { label: string; icon: Icon; onClick: () => void }
+
+/**
+ * Page title block. On phones the icon is dropped, the title becomes a large
+ * heading and the actions sit in a single swipeable row; `fab` is the page's
+ * primary "create" action — a floating button on phones, a glow button on desktop.
+ */
 export function PageHeader({
-  title, subtitle, icon: IconCmp, actions, children,
-}: { title: ReactNode; subtitle?: ReactNode; icon?: Icon; actions?: ReactNode; children?: ReactNode }) {
+  title, subtitle, icon: IconCmp, actions, children, fab,
+}: { title: ReactNode; subtitle?: ReactNode; icon?: Icon; actions?: ReactNode; children?: ReactNode; fab?: FabAction }) {
   return (
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+    <div className="mb-4 flex flex-col gap-3 md:mb-6 md:flex-row md:flex-wrap md:items-end md:justify-between md:gap-4">
       <div className="flex min-w-0 items-center gap-3">
         {IconCmp && (
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/[0.06] bg-gradient-to-br from-iris/30 to-slate/20 text-ink">
-            <IconCmp size={22} />
+          <span className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/[0.06] bg-gradient-to-br from-iris/30 to-slate/20 text-ink md:flex">
+            <IconCmp size={21} />
           </span>
         )}
         <div className="min-w-0">
-          <h1 className="truncate text-xl font-bold text-ink">{title}</h1>
-          {subtitle && <p className="mt-1 text-sm text-mist">{subtitle}</p>}
+          <h1 className="page-title text-[21px] font-extrabold leading-8 text-ink md:truncate md:text-xl md:font-bold">{title}</h1>
+          {subtitle && <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-mist md:mt-1 md:line-clamp-none md:text-sm">{subtitle}</p>}
         </div>
       </div>
-      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+      {(actions || fab) && (
+        <div className={clsx('page-actions no-scrollbar -mx-3.5 flex items-center gap-2 overflow-x-auto px-3.5 md:mx-0 md:flex-wrap md:overflow-visible md:px-0', !actions && 'hidden md:flex')}>
+          {actions}
+          {fab && <Button variant="glow" icon={fab.icon} onClick={fab.onClick} className="hidden md:inline-flex">{fab.label}</Button>}
+        </div>
+      )}
       {children}
+      {fab && <Fab {...fab} />}
     </div>
+  );
+}
+
+/** Floating primary action for phones; it folds to an icon while the list scrolls down. */
+export function Fab({ icon: IconCmp, label, onClick }: FabAction) {
+  const mobile = useIsMobile();
+  const [compact, setCompact] = useState(false);
+  useEffect(() => {
+    const main = document.getElementById('app-main');
+    if (!main || !mobile) return;
+    let last = main.scrollTop;
+    const onScroll = () => {
+      const y = main.scrollTop;
+      if (Math.abs(y - last) < 8) return;
+      setCompact(y > last && y > 80);
+      last = y;
+    };
+    main.addEventListener('scroll', onScroll, { passive: true });
+    return () => main.removeEventListener('scroll', onScroll);
+  }, [mobile]);
+  if (!mobile) return null;
+  return createPortal(
+    <button type="button" onClick={onClick} className={clsx('fab no-print', compact && 'fab-compact')} aria-label={label}>
+      <IconCmp size={22} strokeWidth={2.4} />
+      <span className="fab-label">{label}</span>
+    </button>,
+    document.body,
   );
 }
 
@@ -202,20 +245,20 @@ export function Stat({
     <Tag
       onClick={onClick}
       className={clsx(
-        'glass group relative flex min-w-0 flex-col gap-3 overflow-hidden p-4 text-right transition',
-        onClick && 'hover:-translate-y-0.5 hover:border-iris/30 hover:shadow-glow',
+        'glass group relative flex min-w-0 flex-col gap-2 overflow-hidden p-3.5 text-right transition md:gap-3 md:p-4',
+        onClick && 'hover:-translate-y-0.5 hover:border-iris/30 hover:shadow-glow active:scale-[.98]',
       )}
     >
       <div className="flex items-center justify-between gap-2">
         <span className="truncate text-xs font-medium text-mist">{label}</span>
         {IconCmp && (
-          <span className={clsx('flex h-8 w-8 items-center justify-center rounded-lg', tones[tone])}>
-            <IconCmp size={16} />
+          <span className={clsx('flex h-7 w-7 shrink-0 items-center justify-center rounded-lg md:h-8 md:w-8', tones[tone])}>
+            <IconCmp size={15} />
           </span>
         )}
       </div>
       <div className="flex items-end gap-2">
-        <span className="num text-2xl font-bold leading-none text-ink">{value}</span>
+        <span className="num truncate text-[22px] font-bold leading-none text-ink md:text-2xl">{value}</span>
         {alert && <Dot color="#FF499E" pulse />}
       </div>
       {hint && <div className="truncate text-xs text-mist">{hint}</div>}
@@ -229,7 +272,7 @@ export function Tabs<T extends string>({
   tabs, value, onChange, className,
 }: { tabs: { key: T; label: string; count?: number; icon?: Icon }[]; value: T; onChange: (v: T) => void; className?: string }) {
   return (
-    <div className={clsx('flex gap-1 overflow-x-auto rounded-xl border border-line/70 bg-deep/50 p-1', className)} role="tablist">
+    <div className={clsx('no-scrollbar flex max-w-full gap-1 overflow-x-auto rounded-xl border border-line/70 bg-deep/50 p-1', className)} role="tablist">
       {tabs.map((t) => (
         <button
           key={t.key}
@@ -237,7 +280,7 @@ export function Tabs<T extends string>({
           aria-selected={value === t.key}
           onClick={() => onChange(t.key)}
           className={clsx(
-            'flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm transition',
+            'flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-sm transition md:py-1.5',
             value === t.key ? 'nav-active font-semibold' : 'text-mist hover:bg-ink/[0.05] hover:text-ink',
           )}
         >
@@ -304,7 +347,83 @@ export function Toggle({ checked, onChange, label }: { checked: boolean; onChang
   );
 }
 
-/* ───────────────────────── Modal ───────────────────────── */
+/* ───────────────────────── Bottom sheet & modal ───────────────────────── */
+
+function useEscape(open: boolean, onClose: () => void) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+}
+
+/** Drag the sheet's grab area down to dismiss it, the way native sheets behave. */
+function useDragDismiss(onClose: () => void) {
+  const panel = useRef<HTMLDivElement>(null);
+  const start = useRef<number | null>(null);
+  const delta = useRef(0);
+  return {
+    panel,
+    handle: {
+      onTouchStart: (e: React.TouchEvent) => {
+        start.current = e.touches[0].clientY;
+        delta.current = 0;
+        if (panel.current) panel.current.style.transition = 'none';
+      },
+      onTouchMove: (e: React.TouchEvent) => {
+        if (start.current === null || !panel.current) return;
+        delta.current = Math.max(0, e.touches[0].clientY - start.current);
+        panel.current.style.transform = `translateY(${delta.current}px)`;
+      },
+      onTouchEnd: () => {
+        const p = panel.current;
+        if (start.current === null || !p) return;
+        start.current = null;
+        p.style.transition = 'transform .22s cubic-bezier(.22,1,.36,1)';
+        if (delta.current > 110) {
+          p.style.transform = 'translateY(105%)';
+          setTimeout(() => { onClose(); p.style.transform = ''; }, 170);
+        } else p.style.transform = '';
+      },
+    },
+  };
+}
+
+/** Phone-first bottom sheet with a grab handle, safe-area padding and a sticky footer. */
+export function Sheet({
+  open, onClose, title, subtitle, icon: IconCmp, children, footer, layer = 950, bodyClass, tall,
+}: {
+  open: boolean; onClose: () => void; title?: ReactNode; subtitle?: ReactNode; icon?: Icon; children: ReactNode; footer?: ReactNode;
+  layer?: number; bodyClass?: string; tall?: boolean;
+}) {
+  useEscape(open, onClose);
+  const { panel, handle } = useDragDismiss(onClose);
+  if (!open) return null;
+  return createPortal(
+    <div className="fixed inset-0 flex items-end justify-center" style={{ zIndex: layer }}>
+      <button type="button" aria-label="بستن" className="sheet-backdrop absolute inset-0" onClick={onClose} />
+      <div ref={panel} role="dialog" aria-modal="true" className={clsx('sheet relative flex w-full max-w-lg flex-col', tall ? 'h-[92dvh]' : 'max-h-[92dvh]')}>
+        <div {...handle} className="shrink-0 touch-none px-4 pb-3 pt-2.5">
+          <span className="mx-auto block h-[5px] w-10 rounded-full bg-ink/20" />
+          {title && (
+            <div className="mt-3 flex items-center gap-3">
+              {IconCmp && <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-iris/15 text-iris"><IconCmp size={19} /></span>}
+              <div className="min-w-0 flex-1">
+                <h2 className="truncate text-[17px] font-bold text-ink">{title}</h2>
+                {subtitle && <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-mist">{subtitle}</p>}
+              </div>
+              <button type="button" onClick={onClose} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-ink/[0.07] text-mist active:scale-95" aria-label="بستن"><X size={18} /></button>
+            </div>
+          )}
+        </div>
+        <div className={clsx('min-h-0 flex-1 overflow-y-auto overscroll-contain px-4', footer ? 'pb-4' : 'pb-[calc(1.25rem+env(safe-area-inset-bottom))]', bodyClass)}>{children}</div>
+        {footer && <footer className="sheet-footer flex shrink-0 flex-wrap items-center gap-2 border-t border-line/70 px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3">{footer}</footer>}
+      </div>
+    </div>,
+    document.body,
+  );
+}
 
 export function Modal({
   open, onClose, title, subtitle, children, footer, size = 'md', icon: IconCmp,
@@ -312,18 +431,15 @@ export function Modal({
   open: boolean; onClose: () => void; title: ReactNode; subtitle?: ReactNode; children: ReactNode; footer?: ReactNode;
   size?: 'sm' | 'md' | 'lg' | 'xl'; icon?: Icon;
 }) {
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  const mobile = useIsMobile();
+  useEscape(open && !mobile, onClose);
+  if (mobile) return <Sheet open={open} onClose={onClose} title={title} subtitle={subtitle} icon={IconCmp} footer={footer} layer={900} tall={size === 'lg' || size === 'xl'}>{children}</Sheet>;
   if (!open) return null;
   const widths = { sm: 'max-w-md', md: 'max-w-xl', lg: 'max-w-3xl', xl: 'max-w-5xl' };
   return createPortal(
     <div className="fixed inset-0 z-[900] flex items-start justify-center overflow-y-auto bg-[#0c1214]/70 p-4 pt-[6vh] backdrop-blur-sm" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className={clsx('glass-strong w-full animate-fade-up', widths[size])} role="dialog" aria-modal="true">
-        <header className="flex items-start justify-between gap-4 border-b border-line/70 px-5 py-4">
+        <header className="flex items-start justify-between gap-3 border-b border-line/70 px-5 py-4">
           <div className="flex items-center gap-3">
             {IconCmp && <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-iris/15 text-iris"><IconCmp size={18} /></span>}
             <div>
@@ -402,6 +518,106 @@ export function SearchBox({ value, onChange, placeholder = 'جستجو…', clas
     <div className={clsx('relative', className)}>
       <svg className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-mist" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
       <input className="field pr-9" value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />
+    </div>
+  );
+}
+
+/* ───────────────────────── Phone helpers ───────────────────────── */
+
+/**
+ * Secondary filters (selects) of a list page. Inline on desktop; on phones they
+ * collapse into one "فیلتر" button that opens a bottom sheet.
+ */
+export function Filters({ children, count = 0, onReset }: { children: ReactNode; count?: number; onReset?: () => void }) {
+  const mobile = useIsMobile();
+  const [open, setOpen] = useState(false);
+  if (!mobile) return <>{children}</>;
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className={clsx('relative flex h-[44px] shrink-0 items-center gap-1.5 rounded-xl border px-3.5 text-sm transition active:scale-95', count ? 'border-iris/50 bg-iris/15 text-ink' : 'border-line bg-deep/70 text-frost')}
+      >
+        <SlidersHorizontal size={17} />
+        فیلتر
+        {count > 0 && <span className="num flex h-5 min-w-5 items-center justify-center rounded-full bg-iris px-1 text-[11px] font-bold text-night">{num(count)}</span>}
+      </button>
+      <Sheet
+        open={open}
+        onClose={() => setOpen(false)}
+        title="فیلترها"
+        subtitle="نتایج بلافاصله به‌روز می‌شوند"
+        icon={SlidersHorizontal}
+        footer={<>
+          {onReset && count > 0 && <Button variant="ghost" onClick={() => { onReset(); setOpen(false); }}>حذف همه</Button>}
+          <Button variant="action" onClick={() => setOpen(false)}>نمایش نتایج</Button>
+        </>}
+      >
+        <div className="filter-stack space-y-3">{children}</div>
+      </Sheet>
+    </>
+  );
+}
+
+/** A tappable row-card used in place of table rows on phones. */
+export function ListCard({
+  to, onClick, accent, className, children,
+}: { to?: string; onClick?: () => void; accent?: string; className?: string; children: ReactNode }) {
+  const cls = clsx('list-card', className);
+  const style = accent ? { boxShadow: `inset -3px 0 0 ${accent}` } : undefined;
+  if (to) return <Link to={to} className={cls} style={style}>{children}</Link>;
+  if (onClick) return <div role="button" tabIndex={0} onClick={onClick} className={cls} style={style}>{children}</div>;
+  return <div className={cls} style={style}>{children}</div>;
+}
+
+/** Label / value cell inside a ListCard. */
+export function Metric({ label, children, className }: { label: string; children: ReactNode; className?: string }) {
+  return (
+    <div className={clsx('min-w-0', className)}>
+      <div className="text-[11px] text-mist">{label}</div>
+      <div className="num mt-0.5 truncate text-[13px] font-semibold text-ink">{children}</div>
+    </div>
+  );
+}
+
+/**
+ * Phone-only row of stage chips above a kanban board: shows each column's count,
+ * highlights the column in view and jumps to a column on tap. Columns opt in
+ * with `data-col={key}`.
+ */
+export function BoardJump({ stages }: { stages: { key: string; label: string; count: number; color?: string }[] }) {
+  const [active, setActive] = useState<string | undefined>(stages[0]?.key);
+  const keys = stages.map((s) => s.key).join('|');
+  useEffect(() => {
+    const cols = keys.split('|').map((k) => document.querySelector<HTMLElement>(`[data-col="${k}"]`)).filter(Boolean) as HTMLElement[];
+    if (!cols.length) return;
+    const io = new IntersectionObserver((entries) => {
+      const seen = entries.filter((e) => e.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+      const key = seen ? (seen.target as HTMLElement).dataset.col : undefined;
+      if (key) setActive(key);
+    }, { threshold: [0.55] });
+    cols.forEach((c) => io.observe(c));
+    return () => io.disconnect();
+  }, [keys]);
+  useEffect(() => {
+    document.querySelector(`[data-jump="${active}"]`)?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+  }, [active]);
+  return (
+    <div className="no-scrollbar -mx-3.5 mb-3 flex gap-1.5 overflow-x-auto px-3.5 md:hidden">
+      {stages.map((s) => (
+        <button
+          key={s.key}
+          type="button"
+          data-jump={s.key}
+          onClick={() => document.querySelector(`[data-col="${s.key}"]`)?.scrollIntoView({ inline: 'start', block: 'nearest', behavior: 'smooth' })}
+          className={clsx('flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs transition', active === s.key ? 'border-transparent bg-ink/[0.12] font-bold text-ink' : 'border-line/70 text-mist', !s.count && 'opacity-60')}
+        >
+          <span className="h-2 w-2 rounded-full" style={{ background: s.color ?? '#9DB4C0' }} />
+          {s.label}
+          <span className="num">{num(s.count)}</span>
+        </button>
+      ))}
     </div>
   );
 }

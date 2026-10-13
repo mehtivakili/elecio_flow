@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Users, UserPlus, LayoutGrid, Rows3, Star, PhoneCall, Download, Filter } from 'lucide-react';
+import { Users, UserPlus, LayoutGrid, Rows3, Star, Phone, PhoneCall, Download, Filter } from 'lucide-react';
 import clsx from 'clsx';
 import { IRAN_PROVINCES } from '@shared/iran-locations';
 import { useApi } from '../../lib/hooks';
 import { useSession } from '../../lib/session';
-import { Button, Card, Empty, PageHeader, Pill, SearchBox, Select, Spinner, Stars } from '../../components/ui';
+import { Avatar, Button, Card, Empty, Filters, ListCard, PageHeader, Pill, SearchBox, Select, Spinner, Stars } from '../../components/ui';
 import { LifecyclePill } from '../../components/domain';
 import { ContactFormModal, LogTouchModal, NextActionTag, PhoneLine } from '../../components/crm';
 import { ScoreMeter } from '../../components/charts';
@@ -62,15 +62,14 @@ export default function ContactsPage() {
         icon={Users}
         title="مخاطبین و مشتریان"
         subtitle={`${num(contacts.length)} مخاطب — سرنخ‌ها، مشتریان و نمایندگان`}
-        actions={<>
-          <Button variant="ghost" icon={Download} onClick={exportCsv}>خروجی CSV</Button>
-          <Button variant="glow" icon={UserPlus} onClick={() => setCreating(true)}>سرنخ جدید</Button>
-        </>}
+        actions={<Button variant="ghost" icon={Download} onClick={exportCsv} className="hidden md:inline-flex">خروجی CSV</Button>}
+        fab={{ label: 'سرنخ جدید', icon: UserPlus, onClick: () => setCreating(true) }}
       />
 
-      <Card pad={false} bodyClass="p-4" className="mb-5">
+      <Card pad={false} bodyClass="p-0 md:p-4" className="mb-4 border-0 bg-transparent shadow-none backdrop-blur-none md:mb-5 md:border md:bg-ink/[0.045] md:shadow-glass md:backdrop-blur-md">
         <div className="flex flex-wrap items-center gap-2">
-          <SearchBox value={search} onChange={setSearch} placeholder="نام، تلفن، شهر، یادداشت…" className="min-w-[220px] flex-1" />
+          <SearchBox value={search} onChange={setSearch} placeholder="نام، تلفن، شهر، یادداشت…" className="min-w-0 flex-1 md:min-w-[220px]" />
+          <Filters count={activeFilters} onReset={() => setParams({}, { replace: true })}>
           <Select className="w-auto" value={filters.stage} onChange={(e) => setFilter('stage', e.target.value)}>
             <option value="">همه مراحل</option>
             {settings.lifecycleStages.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
@@ -94,10 +93,11 @@ export default function ContactsPage() {
             <option value="">همه کارشناسان</option>
             {users.map((u) => <option key={u.id} value={u.id}>{u.fullName}</option>)}
           </Select>
+          </Filters>
           {activeFilters > 0 && (
-            <Button variant="ghost" size="sm" icon={Filter} onClick={() => setParams({}, { replace: true })}>حذف {num(activeFilters)} فیلتر</Button>
+            <Button variant="ghost" size="sm" icon={Filter} className="hidden md:inline-flex" onClick={() => setParams({}, { replace: true })}>حذف {num(activeFilters)} فیلتر</Button>
           )}
-          <div className="mr-auto flex rounded-xl border border-line/70 p-0.5">
+          <div className="mr-auto hidden rounded-xl border border-line/70 p-0.5 md:flex">
             <Button size="sm" variant={view === 'table' ? 'action' : 'ghost'} icon={Rows3} onClick={() => setView('table')} aria-label="جدول" />
             <Button size="sm" variant={view === 'cards' ? 'action' : 'ghost'} icon={LayoutGrid} onClick={() => setView('cards')} aria-label="کارت" />
           </div>
@@ -107,7 +107,46 @@ export default function ContactsPage() {
 
       {isLoading ? <Spinner /> : contacts.length === 0 ? (
         <Card><Empty icon={Users} title="مخاطبی یافت نشد" hint="فیلترها را تغییر دهید یا اولین سرنخ را ثبت کنید." action={<Button variant="action" icon={UserPlus} onClick={() => setCreating(true)}>سرنخ جدید</Button>} /></Card>
-      ) : view === 'table' ? (
+      ) : <>
+      <div className="space-y-2.5 md:hidden">
+        <div className="px-1 text-xs text-mist">{num(contacts.length)} مخاطب</div>
+        {contacts.map((c) => {
+          const stage = settings.lifecycleStages.find((s) => s.key === c.stage);
+          const place = c.addresses?.[0]?.county || c.addresses?.[0]?.province;
+          return (
+            <ListCard key={c.id} onClick={() => navigate(`/crm/contacts/${c.id}`)} accent={stage?.color}>
+              <div className="flex items-start gap-3">
+                <Avatar name={c.name} size={42} color={stage?.color} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    {!!c.starred && <Star size={13} className="shrink-0 fill-amber text-amber" />}
+                    <span className="truncate text-[15px] font-bold text-ink">{c.name}</span>
+                  </div>
+                  <div className="truncate text-xs text-mist">{[c.company, c.jobTitle, place].filter(Boolean).join(' · ') || '—'}</div>
+                </div>
+                <LifecyclePill stage={c.stage} />
+              </div>
+              {(c.nextAction || !['customer', 'lost'].includes(c.stage)) && (
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <div className="min-w-0">{c.nextAction ? <NextActionTag action={c.nextAction} /> : <span className="text-xs text-mist">بدون اقدام پیشنهادی</span>}</div>
+                  {!['customer', 'lost'].includes(c.stage) && <ScoreMeter score={c.score} hot={settings.scoring.hotThreshold} warm={settings.scoring.warmThreshold} compact />}
+                </div>
+              )}
+              <div className={clsx('mt-2.5 text-[11px]', !c.lastContactAt ? 'text-amber' : 'text-mist')}>
+                {c.lastContactAt ? `آخرین ارتباط ${relative(c.lastContactAt)}` : 'هنوز تماسی ثبت نشده'} · {userName(c.ownerId)}
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2 border-t border-line/50 pt-3">
+                {c.phones?.[0]?.value
+                  ? <a href={`tel:${c.phones[0].value}`} onClick={(e) => e.stopPropagation()} className="card-action"><Phone size={15} className="text-mint" />تماس</a>
+                  : <span className="card-action opacity-40"><Phone size={15} />بدون تلفن</span>}
+                <button type="button" onClick={(e) => { e.stopPropagation(); setTouch(c); }} className="card-action"><PhoneCall size={15} className="text-iris" />ثبت ارتباط</button>
+              </div>
+            </ListCard>
+          );
+        })}
+      </div>
+      <div className="hidden md:block">
+      {view === 'table' ? (
         <Card pad={false} bodyClass="overflow-x-auto">
           <table className="tbl">
             <thead>
@@ -176,6 +215,8 @@ export default function ContactsPage() {
           })}
         </div>
       )}
+      </div>
+      </>}
 
       <ContactFormModal open={creating} onClose={() => setCreating(false)} onSaved={(id) => navigate(`/crm/contacts/${id}`)} />
       <LogTouchModal open={!!touch} onClose={() => setTouch(null)} contact={touch} />

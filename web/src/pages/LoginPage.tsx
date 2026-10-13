@@ -36,7 +36,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="grid-bg relative flex min-h-full items-center justify-center overflow-hidden p-6" dir="rtl">
+    <div className="grid-bg relative flex min-h-full items-center justify-center overflow-hidden p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-[calc(1rem+env(safe-area-inset-top))] sm:p-6" dir="rtl">
       <div className="aurora -left-32 top-10 bg-iris" style={{ opacity: 0.22 }} />
       <div className="aurora -right-40 bottom-0 bg-rose" style={{ opacity: 0.12 }} />
       <div className="relative z-10 grid w-full max-w-5xl items-center gap-10 lg:grid-cols-[1.1fr_1fr]">
@@ -61,7 +61,7 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <form onSubmit={submit} className="glass-strong mx-auto w-full max-w-sm p-7">
+        <form onSubmit={submit} className="glass-strong mx-auto w-full max-w-sm p-5 sm:p-7">
           <div className="mb-6 flex items-center gap-3 lg:hidden">
             <img src="/brand.svg" alt="" className="h-10 w-10" />
             <span className="text-xl font-extrabold" dir="ltr">ELECIO <span className="text-iris">FLOW</span></span>

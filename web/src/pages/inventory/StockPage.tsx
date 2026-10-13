@@ -6,7 +6,8 @@ import { MOVE_KINDS } from '@shared/defaults';
 import { post, put } from '../../lib/api';
 import { useAction, useApi } from '../../lib/hooks';
 import { useSession } from '../../lib/session';
-import { Button, Card, Empty, Field, Input, Modal, PageHeader, Pill, SearchBox, Select, Spinner, Tabs } from '../../components/ui';
+import { Button, Card, Empty, Field, Filters, Input, ListCard, Modal, PageHeader, Pill, SearchBox, Select, Spinner, Tabs } from '../../components/ui';
+import { matchesSearch } from '@shared/search';
 import { ItemPicker, WarehousePicker } from '../../components/domain';
 import { dateTime, money, num } from '../../lib/format';
 
@@ -23,27 +24,53 @@ export default function StockPage({ view = 'stock' }: { view?: 'stock' | 'moves'
   const { data: stock = [], isLoading } = useApi<any[]>('/stock');
   const { data: moves = [] } = useApi<any[]>(view === 'moves' ? '/moves' : null);
 
-  const levels = useMemo(() => stock.filter((s) => (!wh || s.warehouseId === wh) && (!search || `${s.name} ${s.sku}`.includes(search))), [stock, wh, search]);
-  const filteredMoves = useMemo(() => moves.filter((m) => (!wh || m.fromWh === wh || m.toWh === wh) && (!search || `${m.itemName} ${m.sku} ${m.note}`.includes(search))), [moves, wh, search]);
+  const levels = useMemo(() => stock.filter((s) => (!wh || s.warehouseId === wh) && matchesSearch(`${s.name} ${s.sku}`, search)), [stock, wh, search]);
+  const filteredMoves = useMemo(() => moves.filter((m) => (!wh || m.fromWh === wh || m.toWh === wh) && matchesSearch(`${m.itemName} ${m.sku} ${m.note}`, search)), [moves, wh, search]);
 
   return (
     <div>
       <PageHeader icon={view === 'moves' ? ArrowLeftRight : Warehouse}
         title={view === 'moves' ? 'تراکنش‌های انبار' : 'موجودی انبار'}
         subtitle={view === 'moves' ? 'دفتر مستقل ورود، خروج، انتقال و اصلاح موجودی با مرجع و کاربر ثبت‌کننده' : 'موجودی فعلی، مقدار رزروشده، موجودی آزاد و اصلاح شمارش کالاها'}
-        actions={view === 'moves' ? <Button variant="glow" icon={Plus} onClick={() => setMoving(true)}>تراکنش دستی</Button> : undefined} />
+        fab={view === 'moves' ? { label: 'تراکنش دستی', icon: Plus, onClick: () => setMoving(true) } : undefined} />
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        {view === 'stock' && <Tabs value={tab} onChange={setTab} tabs={[{ key: 'levels', label: 'سطح موجودی' }, { key: 'warehouses', label: 'انبارها', count: warehouses.length }]} />}
+        {view === 'stock' && <Tabs className="w-full md:w-auto" value={tab} onChange={setTab} tabs={[{ key: 'levels', label: 'سطح موجودی' }, { key: 'warehouses', label: 'انبارها', count: warehouses.length }]} />}
         {(view === 'moves' || tab !== 'warehouses') && <>
-          <Select className="w-52" value={wh} onChange={(e) => setWh(e.target.value)}>
-            <option value="">همه انبارها</option>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-          </Select>
-          <SearchBox value={search} onChange={setSearch} className="min-w-[200px] flex-1" />
+          <Filters count={wh ? 1 : 0} onReset={() => setWh('')}>
+            <Select className="w-52" value={wh} onChange={(e) => setWh(e.target.value)}>
+              <option value="">همه انبارها</option>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+            </Select>
+          </Filters>
+          <SearchBox value={search} onChange={setSearch} className="min-w-0 flex-1 md:min-w-[200px]" placeholder="نام یا کد کالا…" />
         </>}
       </div>
 
-      {view === 'stock' && tab === 'levels' && (isLoading ? <Spinner /> : levels.length === 0 ? <Card><Empty title="موجودی ثبت نشده" /></Card> : (
-        <Card pad={false} bodyClass="overflow-x-auto">
+      {view === 'stock' && tab === 'levels' && (isLoading ? <Spinner /> : levels.length === 0 ? <Card><Empty title="موجودی ثبت نشده" /></Card> : (<>
+        <div className="space-y-2.5 md:hidden">
+          {levels.map((s) => {
+            const free = s.qty - s.reserved;
+            const low = free <= s.reorderPoint && s.reorderPoint > 0;
+            return (
+              <ListCard key={`${s.itemId}-${s.warehouseId}`} accent={low ? '#FF499E' : undefined}>
+                <div className="flex items-start justify-between gap-3">
+                  <Link to={`/inventory/items/${s.itemId}`} className="min-w-0">
+                    <div className="truncate text-[15px] font-bold text-ink">{s.name}</div>
+                    <div className="mt-0.5 text-[11px] text-mist"><span className="ltr">{s.sku}</span> · {s.warehouseName}</div>
+                  </Link>
+                  <Button size="sm" variant="outline" icon={ClipboardCheck} onClick={() => setAdjusting(s)}>اصلاح</Button>
+                </div>
+                <div className="mt-3 grid grid-cols-4 gap-1 rounded-xl bg-deep/60 px-1 py-2.5 text-center">
+                  <div><div className="text-[11px] text-mist">موجودی</div><div className="num mt-0.5 font-bold text-ink">{num(s.qty)}</div></div>
+                  <div><div className="text-[11px] text-mist">رزرو</div><div className="num mt-0.5 font-bold text-amber">{s.reserved ? num(s.reserved) : '—'}</div></div>
+                  <div><div className="text-[11px] text-mist">آزاد</div><div className={clsx('num mt-0.5 font-bold', low ? 'text-rose' : 'text-mint')}>{num(free)}</div></div>
+                  <div><div className="text-[11px] text-mist">واحد</div><div className="mt-0.5 truncate font-bold text-frost">{s.unit}</div></div>
+                </div>
+                <div className="mt-2 text-[11px] text-mist">ارزش: <b className="num font-semibold text-frost">{money(s.qty * s.cost)}</b></div>
+              </ListCard>
+            );
+          })}
+        </div>
+        <Card pad={false} bodyClass="overflow-x-auto" className="hidden md:block">
           <table className="tbl">
             <thead><tr><th>کالا</th><th>انبار</th><th>موجودی و اصلاح شمارش</th><th>رزرو</th><th>آزاد</th><th>ارزش</th></tr></thead>
             <tbody>{levels.map((s) => (
@@ -58,10 +85,40 @@ export default function StockPage({ view = 'stock' }: { view?: 'stock' | 'moves'
             ))}</tbody>
           </table>
         </Card>
-      ))}
+      </>))}
+
+      {view === 'moves' && filteredMoves.length > 0 && (
+        <div className="space-y-2.5 md:hidden">
+          {filteredMoves.map((m) => {
+            const inbound = m.toWh && !m.fromWh, outbound = m.fromWh && !m.toWh;
+            const color = inbound ? '#0FD69D' : outbound ? '#BE7C38' : '#779BE7';
+            const refLink = m.refType === 'po' ? `/scm/purchase-orders/${m.refId}` : m.refType === 'order' ? `/sales/orders/${m.refId}` : m.refType === 'work_order' ? `/production/work-orders/${m.refId}` : null;
+            return (
+              <ListCard key={m.id} accent={color}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <Link to={`/inventory/items/${m.itemId}`} className="block truncate text-[15px] font-bold text-ink">{m.itemName}</Link>
+                    <div className="mt-0.5 text-[11px] text-mist">{dateTime(m.at)} · {m.userName}</div>
+                  </div>
+                  <div className={clsx('num shrink-0 text-lg font-extrabold', inbound ? 'text-mint' : outbound ? 'text-amber' : 'text-ink')}>{inbound ? '+' : outbound ? '−' : ''}{num(m.qty)}</div>
+                </div>
+                <div className="mt-2.5 flex flex-wrap items-center gap-2 text-xs">
+                  <Pill color={color}>{MOVE_KINDS[m.kind] ?? m.kind}</Pill>
+                  <span className="text-frost">{m.fromName ?? '—'}</span>
+                  <span className="text-mist">←</span>
+                  <span className="text-frost">{m.toName ?? '—'}</span>
+                </div>
+                {m.note && (refLink
+                  ? <Link to={refLink} className="mt-2 block truncate text-xs text-iris">{m.note}</Link>
+                  : <p className="mt-2 line-clamp-2 text-xs text-mist">{m.note}</p>)}
+              </ListCard>
+            );
+          })}
+        </div>
+      )}
 
       {view === 'moves' && (
-        <Card pad={false} bodyClass="overflow-x-auto">
+        <Card pad={false} bodyClass="overflow-x-auto" className={clsx(filteredMoves.length > 0 && 'hidden md:block')}>
           {filteredMoves.length === 0 ? <Empty title="تراکنشی یافت نشد" /> : (
             <table className="tbl">
               <thead><tr><th>تاریخ</th><th>کالا</th><th>نوع</th><th>مقدار</th><th>از</th><th>به</th><th>مرجع / توضیح</th><th>کاربر</th></tr></thead>
@@ -93,7 +150,7 @@ export default function StockPage({ view = 'stock' }: { view?: 'stock' | 'moves'
           {warehouses.map((w) => {
             const rows = stock.filter((s) => s.warehouseId === w.id);
             return (
-              <div key={w.id} className="glass p-5">
+              <div key={w.id} className="glass p-4 md:p-5">
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
                     <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-iris/15 text-iris"><Warehouse size={18} /></span>

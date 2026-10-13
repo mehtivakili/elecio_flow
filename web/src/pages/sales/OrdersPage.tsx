@@ -4,10 +4,11 @@ import { ShoppingCart, FilePlus2, Rows3, Columns3, AlertTriangle } from 'lucide-
 import clsx from 'clsx';
 import { useApi } from '../../lib/hooks';
 import { useSession } from '../../lib/session';
-import { Button, Card, Empty, PageHeader, Progress, SearchBox, Select, Spinner, Stat, Tabs } from '../../components/ui';
+import { BoardJump, Button, Card, Empty, Filters, ListCard, PageHeader, Progress, SearchBox, Select, Spinner, Stat, Tabs } from '../../components/ui';
 import { OrderStagePill, PriorityPill } from '../../components/domain';
 import { OrderFormModal } from '../../components/orders';
 import { compactMoney, date, money, num, relative } from '../../lib/format';
+import { matchesSearch } from '@shared/search';
 
 export default function OrdersPage() {
   const { settings } = useSession();
@@ -28,7 +29,7 @@ export default function OrdersPage() {
 
   const orders = useMemo(() => data.filter((o) =>
     (status === 'all' || o.status === status) && (!stage || o.stage === stage)
-    && (!search || `${o.number} ${o.contactName} ${o.summary}`.includes(search))), [data, status, stage, search]);
+    && matchesSearch(`${o.number} ${o.contactName} ${o.summary}`, search)), [data, status, stage, search]);
   const open = data.filter((o) => o.status === 'open');
   const cur = settings.company.currency;
   const boardStages = settings.orderStages.filter((s) => !s.final);
@@ -39,9 +40,9 @@ export default function OrdersPage() {
         icon={ShoppingCart}
         title="سفارش‌های فروش"
         subtitle="سفارش‌های دریافتی از مشتری؛ از پیش‌فاکتور تا تحویل و نصب"
-        actions={<Button variant="glow" icon={FilePlus2} onClick={() => setCreating(null)}>پیش‌فاکتور جدید</Button>}
+        fab={{ label: 'پیش‌فاکتور جدید', icon: FilePlus2, onClick: () => setCreating(null) }}
       />
-      <div className="mb-5 grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="stat-rail mb-5 grid grid-cols-2 gap-4 md:grid-cols-4">
         <Stat label="پیش‌فاکتورهای باز" value={num(open.filter((o) => o.stage === 'quote').length)} hint={`${compactMoney(open.filter((o) => o.stage === 'quote').reduce((s, o) => s + o.total, 0))} ${cur}`} tone="sky" />
         <Stat label="فروش در جریان" value={num(open.filter((o) => o.stage !== 'quote').length)} hint={`${compactMoney(open.filter((o) => o.stage !== 'quote').reduce((s, o) => s + o.total, 0))} ${cur}`} tone="lilac" />
         <Stat label="با تأخیر" value={num(open.filter((o) => o.late).length)} hint="عبور از SLA مرحله یا موعد تحویل" tone="rose" alert={open.some((o) => o.late)} />
@@ -49,25 +50,66 @@ export default function OrdersPage() {
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <Tabs value={status} onChange={setStatus} tabs={[
+        <Tabs className="w-full md:w-auto" value={status} onChange={setStatus} tabs={[
           { key: 'open', label: 'باز', count: open.length },
           { key: 'done', label: 'تحویل‌شده', count: data.filter((o) => o.status === 'done').length },
           { key: 'cancelled', label: 'لغو‌شده', count: data.filter((o) => o.status === 'cancelled').length },
           { key: 'all', label: 'همه' },
         ]} />
-        <Select className="w-48" value={stage} onChange={(e) => { if (e.target.value) params.set('stage', e.target.value); else params.delete('stage'); setParams(params); }}>
-          <option value="">همه مراحل</option>
-          {settings.orderStages.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
-        </Select>
-        <SearchBox value={search} onChange={setSearch} placeholder="شماره، مشتری، کالا…" className="min-w-[200px] flex-1" />
-        <div className="flex rounded-xl border border-line/70 p-0.5">
+        <Filters count={stage ? 1 : 0} onReset={() => { params.delete('stage'); setParams(params); }}>
+          <Select className="w-48" value={stage} onChange={(e) => { if (e.target.value) params.set('stage', e.target.value); else params.delete('stage'); setParams(params); }}>
+            <option value="">همه مراحل</option>
+            {settings.orderStages.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+          </Select>
+        </Filters>
+        <SearchBox value={search} onChange={setSearch} placeholder="شماره، مشتری، کالا…" className="min-w-0 flex-1 md:min-w-[200px]" />
+        <div className="flex shrink-0 rounded-xl border border-line/70 p-0.5">
           <Button size="sm" variant={view === 'table' ? 'action' : 'ghost'} icon={Rows3} onClick={() => setView('table')} aria-label="جدول" />
           <Button size="sm" variant={view === 'board' ? 'action' : 'ghost'} icon={Columns3} onClick={() => setView('board')} aria-label="بورد" />
         </div>
       </div>
 
-      {isLoading ? <Spinner /> : orders.length === 0 ? <Card><Empty icon={ShoppingCart} title="سفارشی یافت نشد" /></Card> : view === 'table' ? (
-        <Card pad={false} bodyClass="overflow-x-auto">
+      {isLoading ? <Spinner /> : orders.length === 0 ? <Card><Empty icon={ShoppingCart} title="سفارشی یافت نشد" /></Card> : view === 'table' ? (<>
+        <div className="space-y-2.5 md:hidden">
+          {orders.map((o) => {
+            const stageDef = settings.orderStages.find((s) => s.key === o.stage);
+            const paidPct = o.total ? (o.paid / o.total) * 100 : 0;
+            return (
+              <ListCard key={o.id} to={`/sales/orders/${o.id}`} accent={o.status === 'cancelled' ? '#FF499E' : stageDef?.color}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="truncate text-[15px] font-bold text-ink">{o.contactName}</div>
+                    <div className="ltr mt-0.5 text-right text-xs font-medium text-mist">{o.number}</div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1.5">{o.late && <AlertTriangle size={15} className="text-rose" />}<OrderStagePill stage={o.stage} status={o.status} /></div>
+                </div>
+                {o.summary && <p className="mt-2 line-clamp-1 text-xs text-frost/80">{o.summary}</p>}
+                <div className="mt-3 flex items-end justify-between gap-3">
+                  <div>
+                    <div className="num text-[17px] font-extrabold text-ink">{compactMoney(o.total)} <span className="text-[11px] font-medium text-mist">{cur}</span></div>
+                    <div className="mt-0.5 text-[11px] text-mist">{o.fulfillment === 'mto' ? 'تولید سفارشی' : 'از موجودی'}</div>
+                  </div>
+                  <div className="flex flex-col items-end gap-1 text-[11px]">
+                    <PriorityPill priority={o.priority} />
+                    {o.status === 'open' && <span className={clsx(o.stageLate ? 'text-rose' : 'text-mist')}>{num(o.daysInStage, 1)} روز در مرحله</span>}
+                  </div>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-3 border-t border-line/50 pt-3">
+                  <div>
+                    <div className="mb-1.5 flex justify-between text-[11px] text-mist"><span>پیشرفت</span><span className="num">{num(o.status === 'done' ? 100 : o.progress)}٪</span></div>
+                    <Progress value={o.status === 'done' ? 100 : o.progress} color={o.late ? '#FF499E' : '#779BE7'} />
+                  </div>
+                  <div>
+                    <div className="mb-1.5 flex justify-between text-[11px] text-mist"><span>پرداخت</span><span className="num">{num(paidPct)}٪</span></div>
+                    <Progress value={paidPct} color="#0FD69D" />
+                  </div>
+                </div>
+                {o.promisedAt && <div className={clsx('mt-2.5 text-[11px]', o.promiseLate ? 'text-rose' : 'text-mist')}>تحویل تعهدی: {date(o.promisedAt)}</div>}
+              </ListCard>
+            );
+          })}
+        </div>
+        <Card pad={false} bodyClass="overflow-x-auto" className="hidden md:block">
           <table className="tbl">
             <thead><tr><th>شماره</th><th>مشتری</th><th>اقلام</th><th>مرحله</th><th>پیشرفت</th><th>مبلغ</th><th>پرداخت</th><th>تحویل تعهدی</th><th>اولویت</th></tr></thead>
             <tbody>
@@ -93,12 +135,13 @@ export default function OrdersPage() {
             </tbody>
           </table>
         </Card>
-      ) : (
-        <div className="flex gap-4 overflow-x-auto pb-3">
+      </>) : (<>
+        <BoardJump stages={boardStages.map((s) => ({ key: s.key, label: s.label, color: s.color, count: orders.filter((o) => o.stage === s.key && o.status === 'open').length }))} />
+        <div className="board flex gap-4 overflow-x-auto pb-3">
           {boardStages.map((s) => {
             const col = orders.filter((o) => o.stage === s.key && o.status === 'open');
             return (
-              <div key={s.key} className="glass w-[260px] shrink-0">
+              <div key={s.key} data-col={s.key} className="glass w-[260px] shrink-0">
                 <div className="flex items-center justify-between border-b border-line/60 px-4 py-3" style={{ boxShadow: `inset 0 3px 0 ${s.color}` }}>
                   <span className="text-sm font-semibold">{s.label}</span>
                   <span className="num text-xs text-mist">{num(col.length)} · {compactMoney(col.reduce((a, o) => a + o.total, 0))}</span>
@@ -120,7 +163,7 @@ export default function OrdersPage() {
             );
           })}
         </div>
-      )}
+      </>)}
       <OrderFormModal open={creating !== false} onClose={() => setCreating(false)} defaultContact={creating || null} onSaved={(id) => navigate(`/sales/orders/${id}`)} />
     </div>
   );

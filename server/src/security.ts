@@ -10,6 +10,15 @@ export function hashPassword(password: string): string {
   return bcrypt.hashSync(password, PASSWORD_HASH_ROUNDS);
 }
 
+/**
+ * Rehashes a password that has already been verified successfully.
+ * Legacy accounts may predate the current minimum-length policy; blocking
+ * those users during a cost-factor upgrade would turn a valid login into 500.
+ */
+export function rehashVerifiedPassword(password: string): string {
+  return bcrypt.hashSync(password, PASSWORD_HASH_ROUNDS);
+}
+
 export function verifyPassword(password: string, hash: string): boolean {
   return /^\$2[aby]\$\d{2}\$/.test(hash) && bcrypt.compareSync(password, hash);
 }

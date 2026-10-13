@@ -4,7 +4,7 @@ import { one, q, run, uid, insert } from '../db.ts';
 import { HttpError, JWT_SECRET, getSettings, h, requireAuth, saveSettings, guard, logActivity } from '../core.ts';
 import { ROLES } from '../../../shared/defaults.ts';
 import { rescoreOrg } from '../services/crm.ts';
-import { hashPassword, PASSWORD_MIN_LENGTH, passwordHashNeedsUpgrade, verifyPassword } from '../security.ts';
+import { hashPassword, PASSWORD_MIN_LENGTH, passwordHashNeedsUpgrade, rehashVerifiedPassword, verifyPassword } from '../security.ts';
 
 export const authRouter = Router();
 
@@ -19,7 +19,7 @@ authRouter.post('/login', h((req) => {
   const user = users.find((u) => verifyPassword(plainPassword, u.passwordHash));
   if (!user) throw new HttpError(401, 'نام کاربری یا رمز عبور اشتباه است');
   if (passwordHashNeedsUpgrade(user.passwordHash)) {
-    run('UPDATE users SET password_hash = ? WHERE id = ?', hashPassword(plainPassword), user.id);
+    run('UPDATE users SET password_hash = ? WHERE id = ?', rehashVerifiedPassword(plainPassword), user.id);
   }
   const token = jwt.sign({ sub: user.id }, JWT_SECRET, { expiresIn: '7d' });
   return { token };

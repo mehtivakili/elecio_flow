@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import clsx from 'clsx';
 import { compactMoney, money, num } from '../lib/format';
+import { useIsMobile } from '../lib/media';
 
 /**
  * Charts follow the dataviz rules: one axis, thin marks with rounded data-ends
@@ -15,13 +16,15 @@ export function GroupedBars({
   data, series, height = 220, format = compactMoney,
 }: { data: Record<string, any>[]; series: Series[]; height?: number; format?: (v: number) => string }) {
   const [hover, setHover] = useState<number | null>(null);
-  const W = 640, H = height, padTop = 12, padBottom = 28, padLeft = 64;
+  // Phones get a narrower canvas so axis text stays ~11px after scaling.
+  const mobile = useIsMobile();
+  const W = mobile ? 360 : 640, H = mobile ? Math.round(height * 0.85) : height, padTop = 12, padBottom = 28, padLeft = mobile ? 50 : 64;
   const max = Math.max(1, ...data.flatMap((d) => series.map((s) => d[s.key] as number)));
   const step = niceStep(max / 4);
   const top = Math.ceil(max / step) * step;
   const plotH = H - padTop - padBottom;
   const group = (W - padLeft - 8) / data.length;
-  const bar = Math.min(22, (group - 18) / series.length - 2);
+  const bar = Math.max(4, Math.min(22, (group - (mobile ? 10 : 18)) / series.length - 2));
   const y = (v: number) => padTop + plotH - (v / top) * plotH;
 
   return (
@@ -37,7 +40,7 @@ export function GroupedBars({
         {data.map((d, i) => {
           const gx = padLeft + i * group + (group - (bar + 2) * series.length) / 2;
           return (
-            <g key={i} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}>
+            <g key={i} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)} onClick={() => setHover((h) => (h === i ? null : i))}>
               <rect x={padLeft + i * group} y={padTop} width={group} height={plotH} fill="#E0FBFC" fillOpacity={hover === i ? 0.04 : 0} />
               {series.map((s, si) => {
                 const v = d[s.key] as number;

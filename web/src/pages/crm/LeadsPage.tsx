@@ -32,9 +32,10 @@ export default function LeadsPage() {
         <div className="space-y-3">
           {leads.map((c, i) => (
             <div key={c.id} className="glass overflow-hidden">
-              <div className="flex flex-wrap items-center gap-4 p-4">
+              <div className="flex flex-col gap-3 p-4 md:flex-row md:flex-wrap md:items-center md:gap-4">
+                <div className="flex min-w-0 items-center gap-3 md:min-w-[200px] md:flex-1">
                 <span className={clsx('num flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-bold', i < 3 && tier === 'hot' ? 'bg-rose/20 text-rose' : 'bg-ink/[0.06] text-mist')}>{num(i + 1)}</span>
-                <div className="min-w-[200px] flex-1">
+                <div className="min-w-0 flex-1">
                   <Link to={`/crm/contacts/${c.id}`} className="flex items-center gap-1.5 font-semibold text-ink hover:text-iris">
                     {!!c.starred && <Star size={13} className="fill-amber text-amber" />}{c.name}
                   </Link>
@@ -45,18 +46,21 @@ export default function LeadsPage() {
                     {c.attrs?.controllers?.length ? <span className="ltr">{c.attrs.controllers.join(' · ')}</span> : null}
                   </div>
                 </div>
+                </div>
+                <div className="grid grid-cols-3 items-end gap-3 rounded-xl bg-deep/50 p-3 md:contents">
                 <ScoreMeter score={c.score} hot={settings.scoring.hotThreshold} warm={settings.scoring.warmThreshold} />
-                <div className="w-28 text-xs">
+                <div className="text-xs md:w-28">
                   <div className="text-mist">ارزش تخمینی</div>
                   <div className="num font-semibold text-ink">{c.estimatedValue ? compactMoney(c.estimatedValue) : '—'}</div>
                 </div>
-                <div className="w-32 text-xs">
+                <div className="text-xs md:w-32">
                   <div className="text-mist">آخرین ارتباط</div>
                   <div className="text-frost">{c.lastContactAt ? relative(c.lastContactAt) : 'بدون تماس'}</div>
                 </div>
-                <div className="flex w-56 flex-col items-start gap-1"><NextActionTag action={c.nextAction} /><span className="text-[11px] text-mist">{userName(c.ownerId)} · <PhoneLine phones={c.phones} /></span></div>
+                </div>
+                <div className="flex flex-col items-start gap-1 md:w-56"><NextActionTag action={c.nextAction} /><span className="text-[11px] text-mist">{userName(c.ownerId)} · <PhoneLine phones={c.phones} /></span></div>
                 <div className="flex items-center gap-1">
-                  <Button size="sm" variant="action" icon={PhoneCall} onClick={() => setTouch(c)}>ثبت ارتباط</Button>
+                  <Button size="sm" variant="action" icon={PhoneCall} onClick={() => setTouch(c)} className="flex-1 md:flex-none">ثبت ارتباط</Button>
                   <Button size="sm" variant="ghost" icon={ChevronDown} onClick={() => setOpen(open === c.id ? null : c.id)} aria-label="جزئیات امتیاز" className={clsx(open === c.id && 'rotate-180')} />
                 </div>
               </div>

@@ -5,10 +5,11 @@ import clsx from 'clsx';
 import { post } from '../../lib/api';
 import { useAction, useApi } from '../../lib/hooks';
 import { useSession } from '../../lib/session';
-import { Button, Card, Empty, Field, Input, Modal, PageHeader, SearchBox, Select, Spinner, Stat, Tabs, Textarea } from '../../components/ui';
+import { Button, Card, Empty, Field, Filters, Input, ListCard, Modal, PageHeader, SearchBox, Select, Spinner, Stat, Tabs, Textarea } from '../../components/ui';
 import { DateInput } from '../../components/inputs';
 import { ContactPicker, PriorityPill, TicketStatusPill, TicketTypePill, UnitPicker, UserPicker, WarrantyBadge } from '../../components/domain';
 import { date, num, relative } from '../../lib/format';
+import { matchesSearch } from '@shared/search';
 
 export default function TicketsPage() {
   const { settings, users } = useSession();
@@ -32,32 +33,59 @@ export default function TicketsPage() {
   const isOpen = (t: any) => !['resolved', 'closed'].includes(t.status);
   const list = useMemo(() => data.filter((t) =>
     (tab === 'all' || (tab === 'open' ? isOpen(t) : !isOpen(t))) && (!type || t.type === type) && (!assignee || t.assigneeId === assignee)
-    && (!search || `${t.number} ${t.subject} ${t.contactName ?? ''} ${t.serial ?? ''}`.includes(search))), [data, tab, type, assignee, search]);
+    && matchesSearch(`${t.number} ${t.subject} ${t.contactName ?? ''} ${t.serial ?? ''}`, search)), [data, tab, type, assignee, search]);
   const open = data.filter(isOpen);
   const rated = data.filter((t) => t.satisfaction);
 
   return (
     <div>
       <PageHeader icon={LifeBuoy} title="خدمات پس از فروش" subtitle="نصب، پشتیبانی، گارانتی و تعمیر — با SLA بر اساس اولویت"
-        actions={<Button variant="glow" icon={Plus} onClick={() => setCreating({})}>تیکت جدید</Button>} />
-      <div className="mb-5 grid grid-cols-2 gap-4 md:grid-cols-4">
+        fab={{ label: 'تیکت جدید', icon: Plus, onClick: () => setCreating({}) }} />
+      <div className="stat-rail mb-5 grid grid-cols-2 gap-4 md:grid-cols-4">
         <Stat label="تیکت‌های باز" value={num(open.length)} tone="iris" />
         <Stat label="نقض SLA" value={num(open.filter((t) => t.breached).length)} tone="rose" icon={AlertOctagon} alert={open.some((t) => t.breached)} />
         <Stat label="زیر پوشش گارانتی" value={num(open.filter((t) => t.underWarranty).length)} tone="mint" icon={ShieldCheck} />
         <Stat label="رضایت مشتری" value={rated.length ? `${num(rated.reduce((s, t) => s + t.satisfaction, 0) / rated.length, 1)} / ۵` : '—'} hint={`${num(rated.length)} نظر`} tone="amber" icon={Star} />
       </div>
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <Tabs value={tab} onChange={setTab} tabs={[{ key: 'open', label: 'باز', count: open.length }, { key: 'resolved', label: 'حل‌شده' }, { key: 'all', label: 'همه' }]} />
-        <Select className="w-44" value={type} onChange={(e) => setType(e.target.value)}>
-          <option value="">همه انواع</option>{settings.ticketTypes.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
-        </Select>
-        <Select className="w-44" value={assignee} onChange={(e) => setAssignee(e.target.value)}>
-          <option value="">همه کارشناسان</option>{users.map((u) => <option key={u.id} value={u.id}>{u.fullName}</option>)}
-        </Select>
-        <SearchBox value={search} onChange={setSearch} className="min-w-[200px] flex-1" placeholder="شماره، موضوع، مشتری، سریال…" />
+        <Tabs className="w-full md:w-auto" value={tab} onChange={setTab} tabs={[{ key: 'open', label: 'باز', count: open.length }, { key: 'resolved', label: 'حل‌شده' }, { key: 'all', label: 'همه' }]} />
+        <Filters count={(type ? 1 : 0) + (assignee ? 1 : 0)} onReset={() => { setType(''); setAssignee(''); }}>
+          <Select className="w-44" value={type} onChange={(e) => setType(e.target.value)}>
+            <option value="">همه انواع</option>{settings.ticketTypes.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+          </Select>
+          <Select className="w-44" value={assignee} onChange={(e) => setAssignee(e.target.value)}>
+            <option value="">همه کارشناسان</option>{users.map((u) => <option key={u.id} value={u.id}>{u.fullName}</option>)}
+          </Select>
+        </Filters>
+        <SearchBox value={search} onChange={setSearch} className="min-w-0 flex-1 md:min-w-[200px]" placeholder="شماره، موضوع، مشتری، سریال…" />
       </div>
-      {isLoading ? <Spinner /> : list.length === 0 ? <Card><Empty icon={LifeBuoy} title="تیکتی یافت نشد" /></Card> : (
-        <Card pad={false} bodyClass="overflow-x-auto">
+      {isLoading ? <Spinner /> : list.length === 0 ? <Card><Empty icon={LifeBuoy} title="تیکتی یافت نشد" /></Card> : (<>
+        <div className="space-y-2.5 md:hidden">
+          {list.map((t) => (
+            <ListCard key={t.id} to={`/service/tickets/${t.id}`} accent={t.breached && isOpen(t) ? '#FF499E' : settings.ticketTypes.find((x) => x.key === t.type)?.color}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="line-clamp-2 text-[15px] font-bold leading-6 text-ink">{t.subject}</div>
+                  <div className="mt-0.5 text-[11px] text-mist"><span className="ltr">{t.number}</span> · {t.contactName ?? '—'}</div>
+                </div>
+                <TicketStatusPill status={t.status} />
+              </div>
+              <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                <TicketTypePill type={t.type} />
+                <PriorityPill priority={t.priority} />
+                {t.serial && <span className="ltr rounded-full bg-ink/[0.06] px-2 py-0.5 font-mono text-[11px] text-frost">{t.serial}</span>}
+              </div>
+              <div className="mt-3 flex items-center justify-between gap-2 border-t border-line/50 pt-2.5 text-[11px]">
+                <span className={clsx(t.breached && isOpen(t) ? 'font-semibold text-rose' : 'text-mist')}>
+                  {isOpen(t) ? (t.breached ? `نقض SLA — ${relative(t.slaDueAt)}` : `SLA ${relative(t.slaDueAt)}`) : 'بسته شده'}
+                </span>
+                <span className="text-mist">{t.assigneeName ?? 'بدون کارشناس'}</span>
+              </div>
+              {t.scheduledAt && isOpen(t) && <div className="mt-1.5 text-[11px] text-iris">نوبت بازدید: {date(t.scheduledAt)}</div>}
+            </ListCard>
+          ))}
+        </div>
+        <Card pad={false} bodyClass="overflow-x-auto" className="hidden md:block">
           <table className="tbl">
             <thead><tr><th>شماره</th><th>موضوع</th><th>نوع</th><th>مشتری / سریال</th><th>وضعیت</th><th>اولویت</th><th>SLA</th><th>کارشناس</th></tr></thead>
             <tbody>{list.map((t) => (
@@ -74,7 +102,7 @@ export default function TicketsPage() {
             ))}</tbody>
           </table>
         </Card>
-      )}
+      </>)}
       <TicketFormModal init={creating} onClose={() => setCreating(null)} onSaved={(id) => navigate(`/service/tickets/${id}`)} />
     </div>
   );

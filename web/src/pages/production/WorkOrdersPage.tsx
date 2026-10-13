@@ -5,7 +5,7 @@ import clsx from 'clsx';
 import { post } from '../../lib/api';
 import { useAction, useApi } from '../../lib/hooks';
 import { useSession } from '../../lib/session';
-import { Button, Card, Field, Input, Modal, PageHeader, Progress, Select, Spinner, Tabs, Textarea } from '../../components/ui';
+import { BoardJump, Button, Card, Field, Input, Modal, PageHeader, Progress, Select, Spinner, Tabs, Textarea } from '../../components/ui';
 import { DateInput } from '../../components/inputs';
 import { ItemPicker, PriorityPill, UserPicker, WoStagePill } from '../../components/domain';
 import { date, num, relative } from '../../lib/format';
@@ -26,19 +26,20 @@ export default function WorkOrdersPage() {
       <PageHeader icon={Factory} title="دستورهای تولید" subtitle="کیتینگ ← مونتاژ ← فریمور ← تست و QC ← بسته‌بندی ← ورود به انبار، با شماره‌سریال برای هر دستگاه"
         actions={<>
           <Tabs value={tab} onChange={setTab} tabs={[{ key: 'board', label: 'خط تولید', count: open.length }, { key: 'done', label: 'تکمیل‌شده' }]} />
-          <Button variant="glow" icon={Plus} onClick={() => setCreating(true)}>دستور تولید</Button>
-        </>} />
-      {isLoading ? <Spinner /> : tab === 'board' ? (
-        <div className="flex gap-4 overflow-x-auto pb-3">
+        </>}
+        fab={{ label: 'دستور تولید', icon: Plus, onClick: () => setCreating(true) }} />
+      {isLoading ? <Spinner /> : tab === 'board' ? (<>
+        <BoardJump stages={stages.map((s) => ({ key: s.key, label: s.label, color: s.color, count: open.filter((w) => w.stage === s.key).length }))} />
+        <div className="board flex gap-4 overflow-x-auto pb-3">
           {stages.map((s) => {
             const col = open.filter((w) => w.stage === s.key);
             return (
-              <div key={s.key} className="glass w-[250px] shrink-0">
+              <div key={s.key} data-col={s.key} className="glass w-[250px] shrink-0">
                 <div className="flex items-center justify-between border-b border-line/60 px-4 py-3" style={{ boxShadow: `inset 0 3px 0 ${s.color}` }}>
                   <span className="text-sm font-semibold">{s.label}</span>
                   <span className="num text-xs text-mist">{num(col.reduce((a, w) => a + w.qty, 0))} دستگاه</span>
                 </div>
-                <div className="flex min-h-[200px] flex-col gap-2 p-3">
+                <div className="flex min-h-[160px] flex-col gap-2 p-3">
                   {col.map((w) => (
                     <Link key={w.id} to={`/production/work-orders/${w.id}`} className={clsx('rounded-xl border bg-deep/70 p-3 transition hover:border-iris/40', w.late ? 'border-rose/40' : 'border-white/[0.06]')}>
                       <div className="flex items-center justify-between"><span className="ltr text-xs font-semibold">{w.number}</span><PriorityPill priority={w.priority} /></div>
@@ -57,7 +58,7 @@ export default function WorkOrdersPage() {
             );
           })}
         </div>
-      ) : (
+      </>) : (
         <Card pad={false} bodyClass="overflow-x-auto">
           <table className="tbl">
             <thead><tr><th>شماره</th><th>محصول</th><th>تعداد</th><th>وضعیت</th><th>سفارش</th><th>شروع</th><th>پایان</th></tr></thead>

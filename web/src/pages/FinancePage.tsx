@@ -23,10 +23,10 @@ export default function FinancePage() {
   const cur = settings.company.currency;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       <PageHeader icon={Wallet} title="مالی و هزینه‌ها" subtitle="وصولی، مطالبات، تعهدات خرید، ارزش انبار و حاشیه سود — همه از تراکنش‌های واقعی"
-        actions={can('finance') && <Button variant="glow" icon={Plus} onClick={() => setAdding(true)}>ثبت هزینه</Button>} />
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
+        fab={can('finance') ? { label: 'ثبت هزینه', icon: Plus, onClick: () => setAdding(true) } : undefined} />
+      <div className="stat-rail grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
         <Stat label="وصولی این ماه" value={compactMoney(data.revenueMonth)} hint={cur} icon={TrendingUp} tone="mint" />
         <Stat label="هزینه این ماه" value={compactMoney(data.expensesMonth)} hint={cur} icon={TrendingDown} tone="amber" />
         <Stat label="مطالبات" value={compactMoney(data.receivable)} hint={`${num(data.receivables.length)} سفارش`} icon={HandCoins} tone="rose" />
@@ -34,7 +34,7 @@ export default function FinancePage() {
         <Stat label="ارزش موجودی انبار" value={compactMoney(data.inventoryValue)} hint="به بهای تمام‌شده" icon={Boxes} tone="iris" />
         <Stat label="حاشیه سود ناخالص" value={`${num(data.grossMargin)}٪`} hint="فروش قطعی در برابر بهای کالا" icon={Percent} tone="lilac" />
       </div>
-      <div className="grid gap-6 xl:grid-cols-[1.5fr_1fr]">
+      <div className="grid gap-4 md:gap-6 xl:grid-cols-[1.5fr_1fr]">
         <Card title="روند ۶ ماهه" subtitle={`وصولی و هزینه (${cur})`} icon={TrendingUp}>
           <GroupedBars data={data.series} series={[{ key: 'revenue', label: 'وصولی', color: SERIES[0] }, { key: 'expenses', label: 'هزینه‌ها', color: SERIES[1] }]} />
         </Card>
@@ -43,7 +43,7 @@ export default function FinancePage() {
         </Card>
       </div>
 
-      <Tabs className="w-fit" value={tab} onChange={setTab} tabs={[
+      <Tabs className="w-full md:w-fit" value={tab} onChange={setTab} tabs={[
         { key: 'receivables', label: 'مطالبات', count: data.receivables.length },
         { key: 'payments', label: 'دریافتی‌ها' }, { key: 'expenses', label: 'هزینه‌ها', count: expenses.length },
       ]} />

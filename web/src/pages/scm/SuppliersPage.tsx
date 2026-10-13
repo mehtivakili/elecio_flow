@@ -17,14 +17,14 @@ export default function SuppliersPage() {
   return (
     <div>
       <PageHeader icon={Building2} title="تأمین‌کنندگان" subtitle="کارنامه تحویل به‌موقع، تأخیر میانگین و حجم خرید هر تأمین‌کننده"
-        actions={<Button variant="glow" icon={Plus} onClick={() => setEditing({})}>تأمین‌کننده جدید</Button>} />
+        fab={{ label: 'تأمین‌کننده جدید', icon: Plus, onClick: () => setEditing({}) }} />
       {isLoading ? <Spinner /> : data.length === 0 ? <Card><Empty icon={Building2} title="تأمین‌کننده‌ای ثبت نشده" /></Card> : (
         <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
           {data.map((s) => {
             const rate = s.onTimeRate;
             const tone = rate === null ? 'text-mist' : rate >= 85 ? 'text-mint' : rate >= 60 ? 'text-amber' : 'text-rose';
             return (
-              <div key={s.id} className={clsx('glass p-5', focus === s.id && 'border-iris/60 shadow-glow')}>
+              <div key={s.id} className={clsx('glass p-4 md:p-5', focus === s.id && 'border-iris/60 shadow-glow')}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="truncate font-semibold text-ink">{s.name}</div>
@@ -43,7 +43,7 @@ export default function SuppliersPage() {
                   <span className="flex items-center gap-1"><Clock size={12} />{num(s.openPos)} سفارش باز{s.lateNow ? <b className="text-rose"> · {num(s.lateNow)} با تأخیر</b> : null}</span>
                   <Stars value={s.rating} size={12} />
                 </div>
-                <div className="mt-2 flex items-center gap-2 text-xs text-frost"><Phone size={12} />{s.contactPerson} — <span className="ltr">{s.phone}</span></div>
+                <div className="mt-2 flex items-center gap-2 text-xs text-frost"><Phone size={12} />{s.contactPerson} — <a href={`tel:${s.phone}`} className="ltr text-iris">{s.phone}</a></div>
               </div>
             );
           })}

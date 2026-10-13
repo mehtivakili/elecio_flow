@@ -269,34 +269,38 @@ insightsRouter.get('/activity', h((req) => q(
 /** One search box for everything: people, phone numbers, serials, documents, parts. */
 insightsRouter.get('/search', h((req) => {
   const raw = String(req.query.q ?? '').trim();
-  if (raw.length < 2) return [];
+  const normalized = normalizeSearch(raw);
+  if (normalized.length < 2) return [];
   const orgId = req.user.orgId;
   const like = `%${raw}%`;
-  const norm = `%${normalizeSearch(raw)}%`;
+  const norm = `%${normalized}%`;
   const results: { type: string; id: string; title: string; subtitle: string; link: string }[] = [];
-  for (const c of q('SELECT id, name, company, stage FROM contacts WHERE org_id = ? AND search LIKE ? LIMIT 6', orgId, norm)) {
+  for (const c of q('SELECT id, name, company, stage FROM contacts WHERE org_id = ? AND normalize_search(search) LIKE ? LIMIT 6', orgId, norm)) {
     results.push({ type: 'contact', id: c.id, title: c.name, subtitle: c.company || 'مخاطب', link: `/crm/contacts/${c.id}` });
   }
   for (const u of q(
     `SELECT u.id, u.serial, i.name, c.name AS contact_name FROM units u JOIN items i ON i.id = u.item_id
-     LEFT JOIN contacts c ON c.id = u.contact_id WHERE u.org_id = ? AND u.serial LIKE ? LIMIT 6`, orgId, like,
+     LEFT JOIN contacts c ON c.id = u.contact_id WHERE u.org_id = ? AND
+     (u.serial LIKE ? OR normalize_search(i.name) LIKE ? OR normalize_search(COALESCE(c.name, '')) LIKE ?) LIMIT 6`, orgId, like, norm, norm,
   )) results.push({ type: 'unit', id: u.id, title: u.serial, subtitle: `${u.name}${u.contactName ? ` — ${u.contactName}` : ''}`, link: `/units/${u.serial}` });
   for (const o of q(
-    'SELECT o.id, o.number, c.name FROM orders o JOIN contacts c ON c.id = o.contact_id WHERE o.org_id = ? AND o.number LIKE ? LIMIT 5', orgId, like,
+    `SELECT o.id, o.number, c.name FROM orders o JOIN contacts c ON c.id = o.contact_id
+     WHERE o.org_id = ? AND (o.number LIKE ? OR normalize_search(c.name) LIKE ? OR normalize_search(COALESCE(o.summary, '')) LIKE ?) LIMIT 5`, orgId, like, norm, norm,
   )) results.push({ type: 'order', id: o.id, title: o.number, subtitle: o.name, link: `/sales/orders/${o.id}` });
   for (const p of q(
-    'SELECT p.id, p.number, s.name FROM purchase_orders p JOIN suppliers s ON s.id = p.supplier_id WHERE p.org_id = ? AND (p.number LIKE ? OR p.tracking_no LIKE ?) LIMIT 5', orgId, like, like,
+    `SELECT p.id, p.number, s.name FROM purchase_orders p JOIN suppliers s ON s.id = p.supplier_id
+     WHERE p.org_id = ? AND (p.number LIKE ? OR p.tracking_no LIKE ? OR normalize_search(s.name) LIKE ?) LIMIT 5`, orgId, like, like, norm,
   )) results.push({ type: 'po', id: p.id, title: p.number, subtitle: p.name, link: `/scm/purchase-orders/${p.id}` });
   for (const w of q('SELECT id, number FROM work_orders WHERE org_id = ? AND number LIKE ? LIMIT 4', orgId, like)) {
     results.push({ type: 'work_order', id: w.id, title: w.number, subtitle: 'دستور تولید', link: `/production/work-orders/${w.id}` });
   }
-  for (const t of q('SELECT id, number, subject FROM tickets WHERE org_id = ? AND (number LIKE ? OR subject LIKE ?) LIMIT 5', orgId, like, like)) {
+  for (const t of q('SELECT id, number, subject FROM tickets WHERE org_id = ? AND (number LIKE ? OR normalize_search(subject) LIKE ?) LIMIT 5', orgId, like, norm)) {
     results.push({ type: 'ticket', id: t.id, title: t.number, subtitle: t.subject, link: `/service/tickets/${t.id}` });
   }
-  for (const i of q('SELECT id, sku, name FROM items WHERE org_id = ? AND (sku LIKE ? OR name LIKE ?) LIMIT 5', orgId, like, like)) {
+  for (const i of q('SELECT id, sku, name FROM items WHERE org_id = ? AND (sku LIKE ? OR normalize_search(name) LIKE ?) LIMIT 5', orgId, like, norm)) {
     results.push({ type: 'item', id: i.id, title: i.name, subtitle: i.sku, link: `/inventory/items/${i.id}` });
   }
-  for (const s of q('SELECT id, name, city FROM suppliers WHERE org_id = ? AND name LIKE ? LIMIT 4', orgId, like)) {
+  for (const s of q("SELECT id, name, city FROM suppliers WHERE org_id = ? AND (normalize_search(name) LIKE ? OR normalize_search(COALESCE(city, '')) LIKE ?) LIMIT 4", orgId, norm, norm)) {
     results.push({ type: 'supplier', id: s.id, title: s.name, subtitle: s.city || 'تأمین‌کننده', link: `/scm/suppliers?focus=${s.id}` });
   }
   return results;

@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { normalizeSearchText } from '../../shared/search.ts';
 
 /**
  * Single SQLite file, multi-tenant by `org_id` on every business table.
@@ -511,6 +512,7 @@ export function getDb(): DatabaseSync {
   if (db) return db;
   fs.mkdirSync(DATA_DIR, { recursive: true });
   db = new DatabaseSync(DB_PATH);
+  db.function('normalize_search', { deterministic: true }, normalizeSearchText);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
   db.exec(SCHEMA);
   // Backfill checkpoints for databases created before per-device tracking.
@@ -641,13 +643,5 @@ export function uid(prefix: string): string {
 }
 
 export function normalizeSearch(text: string): string {
-  return String(text || '')
-    .replace(/ي/g, 'ی')
-    .replace(/ك/g, 'ک')
-    .replace(/[أإآ]/g, 'ا')
-    .replace(/‌/g, ' ')
-    .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
-    .toLowerCase()
-    .replace(/[\s\-()._]+/g, ' ')
-    .trim();
+  return normalizeSearchText(text);
 }

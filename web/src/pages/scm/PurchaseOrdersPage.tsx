@@ -5,7 +5,7 @@ import clsx from 'clsx';
 import { post } from '../../lib/api';
 import { useAction, useApi } from '../../lib/hooks';
 import { useSession } from '../../lib/session';
-import { Button, Card, Empty, Field, Input, Modal, MoneyInput, PageHeader, Progress, Spinner, Stat, Tabs, Textarea } from '../../components/ui';
+import { Button, Card, Empty, Field, Input, ListCard, Modal, MoneyInput, PageHeader, Progress, Spinner, Stat, Tabs, Textarea } from '../../components/ui';
 import { DateInput, Picker } from '../../components/inputs';
 import { ItemPicker, PoStatusPill } from '../../components/domain';
 import { compactMoney, date, money, num } from '../../lib/format';
@@ -30,9 +30,9 @@ export default function PurchaseOrdersPage() {
         icon={Truck}
         title="سفارش‌های خرید"
         subtitle="خریدهای ثبت‌شده توسط ما برای تأمین کالا و قطعات؛ از سفارش تا رسید انبار"
-        actions={<Button variant="glow" icon={PackagePlus} onClick={() => setCreating([])}>سفارش خرید جدید</Button>}
+        fab={{ label: 'سفارش خرید جدید', icon: PackagePlus, onClick: () => setCreating([]) }}
       />
-      <div className="mb-5 grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="stat-rail mb-5 grid grid-cols-2 gap-4 md:grid-cols-4">
         <Stat label="خریدهای در جریان" value={num(openPos.length)} hint={`${compactMoney(openPos.reduce((s, p) => s + p.total, 0))} ${settings.company.currency}`} tone="sky" />
         <Stat label="محموله‌های با تأخیر" value={num(data.filter((p) => p.delayed).length)} hint="عبور از تاریخ تحویل" tone="rose" alert={data.some((p) => p.delayed)} />
         <Stat label="پیش‌نویس" value={num(data.filter((p) => p.status === 'draft').length)} hint="هنوز ارسال نشده" tone="iris" />
@@ -41,7 +41,7 @@ export default function PurchaseOrdersPage() {
 
       {reorder.length > 0 && (
         <Card className="mb-5" title="پیشنهاد خرید هوشمند" subtitle="کالاهایی که موجودی آزاد + در راه آن‌ها به نقطه سفارش رسیده" icon={Sparkles}
-          actions={<Button size="sm" variant="action" icon={PackagePlus} onClick={() => setCreating(reorder)}>ایجاد سفارش برای همه</Button>}>
+          actions={<Button size="sm" variant="action" icon={PackagePlus} onClick={() => setCreating(reorder)} className="w-full md:w-auto">ایجاد سفارش برای همه</Button>}>
           <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
             {reorder.map((i) => (
               <div key={i.id} className="flex items-center justify-between gap-3 rounded-xl bg-ink/[0.04] px-3 py-2 text-sm">
@@ -57,12 +57,39 @@ export default function PurchaseOrdersPage() {
         </Card>
       )}
 
-      <Tabs className="mb-4 w-fit" value={tab} onChange={setTab} tabs={[
+      <Tabs className="mb-4 w-full md:w-fit" value={tab} onChange={setTab} tabs={[
         { key: 'open', label: 'در جریان', count: data.filter((p) => !['received', 'cancelled'].includes(p.status)).length },
         { key: 'received', label: 'دریافت‌شده' }, { key: 'all', label: 'همه' },
       ]} />
-      {isLoading ? <Spinner /> : list.length === 0 ? <Card><Empty icon={Truck} title="سفارش خریدی وجود ندارد" /></Card> : (
-        <Card pad={false} bodyClass="overflow-x-auto">
+      {isLoading ? <Spinner /> : list.length === 0 ? <Card><Empty icon={Truck} title="سفارش خریدی وجود ندارد" /></Card> : (<>
+        <div className="space-y-2.5 md:hidden">
+          {list.map((p) => {
+            const received = p.qtyTotal ? (p.qtyReceived / p.qtyTotal) * 100 : 0;
+            return (
+              <ListCard key={p.id} to={`/scm/purchase-orders/${p.id}`} accent={p.delayed ? '#FF499E' : undefined}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="truncate text-[15px] font-bold text-ink">{p.supplierName}</div>
+                    <div className="ltr mt-0.5 text-right text-xs font-medium text-mist">{p.number}</div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1.5">{p.delayed && <AlertTriangle size={15} className="text-rose" />}<PoStatusPill status={p.status} /></div>
+                </div>
+                <div className="mt-3 flex items-end justify-between gap-3">
+                  <div className="num text-[17px] font-extrabold text-ink">{compactMoney(p.total)} <span className="text-[11px] font-medium text-mist">{settings.company.currency}</span></div>
+                  <div className={clsx('text-left text-[11px]', p.delayed ? 'text-rose' : 'text-mist')}>
+                    تحویل {date(p.expectedAt)}{p.delayed && <div>{num(p.delayDays)} روز تأخیر</div>}
+                  </div>
+                </div>
+                <div className="mt-3 border-t border-line/50 pt-3">
+                  <div className="mb-1.5 flex justify-between text-[11px] text-mist"><span>دریافت کالا</span><span className="num">{num(received)}٪</span></div>
+                  <Progress value={received} color="#0FD69D" />
+                </div>
+                {(p.shippingMethod || p.trackingNo) && <div className="mt-2 text-[11px] text-mist">{p.shippingMethod}{p.trackingNo && <span className="ltr mr-1">{p.trackingNo}</span>}</div>}
+              </ListCard>
+            );
+          })}
+        </div>
+        <Card pad={false} bodyClass="overflow-x-auto" className="hidden md:block">
           <table className="tbl">
             <thead><tr><th>شماره</th><th>تأمین‌کننده</th><th>وضعیت</th><th>مبلغ</th><th>دریافت</th><th>تاریخ تحویل</th><th>حمل</th></tr></thead>
             <tbody>{list.map((p) => (
@@ -78,7 +105,7 @@ export default function PurchaseOrdersPage() {
             ))}</tbody>
           </table>
         </Card>
-      )}
+      </>)}
       <PoFormModal open={creating !== null} onClose={() => setCreating(null)} prefill={creating ?? []} onSaved={(id) => navigate(`/scm/purchase-orders/${id}`)} />
     </div>
   );
@@ -117,7 +144,7 @@ function PoFormModal({ open, onClose, prefill, onSaved }: { open: boolean; onClo
         <Field label="تأمین‌کننده *" className="md:col-span-2"><Picker options={suppliers.map((s) => ({ value: s.id, label: s.name, hint: `${s.city} · ${num(s.leadTimeDays)} روز` }))} value={supplierId} onChange={setSupplierId} /></Field>
         <Field label="تاریخ تحویل مورد انتظار" hint={supplier ? `پیش‌فرض: ${num(supplier.leadTimeDays)} روز بعد` : undefined}><DateInput value={f.expectedAt} onChange={(v) => setF({ ...f, expectedAt: v })} /></Field>
       </div>
-      <div className="mt-5 overflow-x-auto rounded-2xl border border-line/70">
+      <div className="mt-5 overflow-x-auto rounded-2xl border-line/70 md:border">
         <table className="tbl">
           <thead><tr><th className="w-1/2">قطعه</th><th>تعداد</th><th>قیمت واحد</th><th>جمع</th><th /></tr></thead>
           <tbody>{lines.map((l, i) => (

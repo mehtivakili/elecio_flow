@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { Check, Lock, AlertTriangle } from 'lucide-react';
 import clsx from 'clsx';
 import type { StageDef } from '@shared/defaults';
@@ -24,8 +24,17 @@ export function StageTrack({
   closed?: boolean; onPick?: (key: string) => void;
 }) {
   const index = stages.findIndex((s) => s.key === current);
+  const track = useRef<HTMLDivElement>(null);
+  // On narrow screens bring the current step into view instead of always showing step 1.
+  useEffect(() => {
+    const el = track.current;
+    const step = el?.querySelector<HTMLElement>('[data-current="true"]');
+    if (!el || !step || el.scrollWidth <= el.clientWidth) return;
+    const box = el.getBoundingClientRect(), at = step.getBoundingClientRect();
+    el.scrollBy({ left: at.left + at.width / 2 - (box.left + box.width / 2), behavior: 'smooth' });
+  }, [index]);
   return (
-    <div className="overflow-x-auto pb-1">
+    <div ref={track} className="no-scrollbar overflow-x-auto pb-1">
       <ol className="flex min-w-max items-start">
         {stages.map((s, i) => {
           const done = closed || i < index;
@@ -34,7 +43,7 @@ export function StageTrack({
           const days = log ? ((log.leftAt ?? Date.now()) - log.enteredAt) / 86_400_000 : null;
           const late = active && s.slaDays && days !== null && days > s.slaDays;
           return (
-            <li key={s.key} className="flex items-start">
+            <li key={s.key} className="flex items-start" data-current={active}>
               <button
                 type="button"
                 disabled={!onPick}
