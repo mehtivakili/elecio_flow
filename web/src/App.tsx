@@ -17,7 +17,7 @@ import PurchaseOrderPage from './pages/scm/PurchaseOrderPage';
 import SuppliersPage from './pages/scm/SuppliersPage';
 import ItemsPage from './pages/inventory/ItemsPage';
 import ItemPage from './pages/inventory/ItemPage';
-import StockPage from './pages/inventory/StockPage';
+import StockPage, { StockMovesPage } from './pages/inventory/StockPage';
 import WorkOrdersPage from './pages/production/WorkOrdersPage';
 import WorkOrderPage from './pages/production/WorkOrderPage';
 import UnitsPage from './pages/units/UnitsPage';
@@ -52,6 +52,7 @@ export default function App() {
           <Route path="inventory/items" element={<ItemsPage />} />
           <Route path="inventory/items/:id" element={<ItemPage />} />
           <Route path="inventory/stock" element={<StockPage />} />
+          <Route path="inventory/moves" element={<StockMovesPage />} />
           <Route path="production/work-orders" element={<WorkOrdersPage />} />
           <Route path="production/work-orders/:id" element={<WorkOrderPage />} />
           <Route path="units" element={<UnitsPage />} />

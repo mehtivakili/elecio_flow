@@ -198,7 +198,7 @@ export default function ContactPage() {
             onChange={setTab}
             tabs={[
               { key: 'timeline', label: 'تاریخچه ارتباط', icon: History, count: timeline.length },
-              { key: 'orders', label: 'سفارش‌ها', icon: ShoppingCart, count: data.orders.length },
+              { key: 'orders', label: 'فروش‌ها', icon: ShoppingCart, count: data.orders.length },
               { key: 'units', label: 'دستگاه‌ها', icon: Cpu, count: data.units.length },
               { key: 'tickets', label: 'تیکت‌ها', icon: LifeBuoy, count: data.tickets.length },
             ]}

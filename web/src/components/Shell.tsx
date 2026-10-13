@@ -3,7 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   LayoutDashboard, Users, GitBranch, Flame, PhoneCall, Map, ShoppingCart, Truck, Building2, Boxes, ArrowLeftRight,
-  Factory, Cpu, LifeBuoy, Wallet, ListChecks, Settings, PanelRightClose, PanelRightOpen, LogOut, Search, Bell,
+  Factory, Cpu, LifeBuoy, Wallet, ListChecks, Settings, PanelRightClose, PanelRightOpen, LogOut, Search, Bell, Warehouse,
   Plus, ChevronLeft, AlertTriangle, AlertOctagon, Info, CornerDownLeft, UserPlus, FileText, Wrench, PackagePlus,
   Route, type LucideIcon,
 } from 'lucide-react';
@@ -49,15 +49,16 @@ function Sidebar() {
     {
       label: 'سفارش و تأمین', items: [
         { to: '/operations/product-flow', label: 'فرآیند تأمین محصول', icon: Route },
-        { to: '/sales/orders', label: 'سفارش‌ها', icon: ShoppingCart, badge: count('sales') },
-        { to: '/scm/purchase-orders', label: 'سفارش‌های خرید', icon: Truck, badge: count('scm') },
+        { to: '/sales/orders', label: 'سفارش فروش', icon: ShoppingCart, badge: count('sales') },
+        { to: '/scm/purchase-orders', label: 'سفارش خرید', icon: Truck, badge: count('scm') },
         { to: '/scm/suppliers', label: 'تأمین‌کنندگان', icon: Building2 },
       ],
     },
     {
       label: 'انبار و تولید', items: [
         { to: '/inventory/items', label: 'کالاها و قطعات', icon: Boxes, badge: count('inventory') },
-        { to: '/inventory/stock', label: 'موجودی و تراکنش‌ها', icon: ArrowLeftRight },
+        { to: '/inventory/stock', label: 'موجودی انبار', icon: Warehouse },
+        { to: '/inventory/moves', label: 'تراکنش‌های انبار', icon: ArrowLeftRight },
         { to: '/production/work-orders', label: 'دستورهای تولید', icon: Factory, badge: count('production') },
         { to: '/units', label: 'شناسنامه دستگاه‌ها', icon: Cpu },
       ],
@@ -227,9 +228,9 @@ function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void 
   });
   const actions = useMemo(() => [
     { type: 'action', id: 'a1', title: 'مخاطب / سرنخ جدید', subtitle: 'ثبت در CRM', link: '/crm/contacts?new=1', icon: UserPlus },
-    { type: 'action', id: 'a2', title: 'پیش‌فاکتور / سفارش جدید', subtitle: 'فروش', link: '/sales/orders?new=1', icon: FileText },
+    { type: 'action', id: 'a2', title: 'سفارش فروش جدید', subtitle: 'فروش', link: '/sales/orders?new=1', icon: FileText },
     { type: 'action', id: 'a3', title: 'تیکت پشتیبانی جدید', subtitle: 'خدمات پس از فروش', link: '/service/tickets?new=1', icon: Wrench },
-    { type: 'action', id: 'a4', title: 'سفارش خرید جدید', subtitle: 'زنجیره تأمین', link: '/scm/purchase-orders?new=1', icon: PackagePlus },
+    { type: 'action', id: 'a4', title: 'سفارش خرید جدید', subtitle: 'تأمین', link: '/scm/purchase-orders?new=1', icon: PackagePlus },
     { type: 'action', id: 'a5', title: 'دستور تولید جدید', subtitle: 'تولید', link: '/production/work-orders?new=1', icon: Factory },
   ], []);
   const list = debounced.trim().length >= 2 ? results : actions.filter((a) => !query || a.title.includes(query));
@@ -298,7 +299,7 @@ function QuickCreate() {
   }, [open]);
   const items: [string, string, LucideIcon][] = [
     ['سرنخ / مخاطب', '/crm/contacts?new=1', UserPlus],
-    ['پیش‌فاکتور', '/sales/orders?new=1', FileText],
+    ['سفارش فروش', '/sales/orders?new=1', FileText],
     ['تیکت پشتیبانی', '/service/tickets?new=1', Wrench],
     ['سفارش خرید', '/scm/purchase-orders?new=1', PackagePlus],
     ['دستور تولید', '/production/work-orders?new=1', Factory],

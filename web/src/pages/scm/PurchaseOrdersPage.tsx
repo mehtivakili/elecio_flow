@@ -29,11 +29,11 @@ export default function PurchaseOrdersPage() {
       <PageHeader
         icon={Truck}
         title="سفارش‌های خرید"
-        subtitle="تأمین قطعات از سفارش تا رسید انبار — با پایش تأخیر تأمین‌کنندگان"
+        subtitle="خریدهای ثبت‌شده توسط ما برای تأمین کالا و قطعات؛ از سفارش تا رسید انبار"
         actions={<Button variant="glow" icon={PackagePlus} onClick={() => setCreating([])}>سفارش خرید جدید</Button>}
       />
       <div className="mb-5 grid grid-cols-2 gap-4 md:grid-cols-4">
-        <Stat label="سفارش‌های در جریان" value={num(openPos.length)} hint={`${compactMoney(openPos.reduce((s, p) => s + p.total, 0))} ${settings.company.currency}`} tone="sky" />
+        <Stat label="خریدهای در جریان" value={num(openPos.length)} hint={`${compactMoney(openPos.reduce((s, p) => s + p.total, 0))} ${settings.company.currency}`} tone="sky" />
         <Stat label="محموله‌های با تأخیر" value={num(data.filter((p) => p.delayed).length)} hint="عبور از تاریخ تحویل" tone="rose" alert={data.some((p) => p.delayed)} />
         <Stat label="پیش‌نویس" value={num(data.filter((p) => p.status === 'draft').length)} hint="هنوز ارسال نشده" tone="iris" />
         <Stat label="کالای زیر نقطه سفارش" value={num(reorder.length)} hint="نیازمند خرید" tone="amber" />

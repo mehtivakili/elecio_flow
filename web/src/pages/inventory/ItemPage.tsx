@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Boxes, Pencil, Layers, Warehouse, ArrowLeftRight, Plus, Trash2, Save, Cpu, Factory } from 'lucide-react';
+import { Boxes, Pencil, Layers, Warehouse, ArrowLeftRight, Plus, Trash2, Save, Cpu, Factory, ClipboardCheck } from 'lucide-react';
 import clsx from 'clsx';
 import { MOVE_KINDS, UNIT_STATUS } from '@shared/defaults';
 import { put } from '../../lib/api';
@@ -11,12 +11,14 @@ import { ItemPicker } from '../../components/domain';
 import { ItemFormModal } from '../../components/items';
 import { StackStrip } from '../../components/charts';
 import { dateTime, money, num } from '../../lib/format';
+import { StockAdjustmentModal } from './StockPage';
 
 export default function ItemPage() {
   const { id } = useParams();
   const { settings } = useSession();
   const { data, isLoading } = useApi<any>(`/items/${id}`);
   const [editing, setEditing] = useState<any>(null);
+  const [adjusting, setAdjusting] = useState<any>(null);
   const [bom, setBom] = useState<{ componentId: string | null; qty: number }[] | null>(null);
   useEffect(() => { setBom(null); }, [id]);
   const saveBom = useAction(() => put(`/items/${id}/bom`, { lines: (bom ?? []).filter((l) => l.componentId) }), { success: 'BOM ذخیره شد', onSuccess: () => setBom(null) });
@@ -104,9 +106,9 @@ export default function ItemPage() {
           <Card title="موجودی در انبارها" icon={Warehouse}>
             {data.stock.length === 0 ? <p className="text-sm text-mist">موجودی ثبت نشده</p> : (
               <ul className="space-y-2">{data.stock.map((s: any) => (
-                <li key={s.warehouseId} className="flex items-center justify-between rounded-xl bg-ink/[0.04] px-3 py-2 text-sm">
+                <li key={s.warehouseId} className="flex items-center justify-between gap-2 rounded-xl bg-ink/[0.04] px-3 py-2 text-sm">
                   <span>{s.warehouseName}</span>
-                  <span className="num">{num(s.qty)}{s.reserved ? <span className="mr-1.5 text-xs text-amber">({num(s.reserved)} رزرو)</span> : null}</span>
+                  <span className="mr-auto flex items-center gap-2"><span className="num">{num(s.qty)}{s.reserved ? <span className="mr-1.5 text-xs text-amber">({num(s.reserved)} رزرو)</span> : null}</span><Button size="sm" variant="outline" icon={ClipboardCheck} onClick={() => setAdjusting({ ...s, itemId: i.id, name: i.name, unit: i.unit })}>اصلاح موجودی</Button></span>
                 </li>
               ))}</ul>
             )}
@@ -138,6 +140,7 @@ export default function ItemPage() {
         </div>
       </div>
       <ItemFormModal item={editing} onClose={() => setEditing(null)} />
+      <StockAdjustmentModal stock={adjusting} onClose={() => setAdjusting(null)} />
     </div>
   );
 }

@@ -72,7 +72,7 @@ export default function DashboardPage() {
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <Stat label="وصولی این ماه" value={compactMoney(k.revenueMonth)} hint={`فروش قطعی ماه: ${compactMoney(k.bookedMonth)} ${cur}`} icon={Wallet} tone="mint" onClick={() => navigate('/finance')} />
-        <Stat label="سفارش‌های باز" value={num(k.openOrders)} hint={`ارزش: ${compactMoney(k.openOrdersValue)} ${cur}`} icon={ShoppingCart} tone="lilac" alert={k.lateOrders > 0} onClick={() => navigate('/sales/orders')} />
+        <Stat label="فروش‌های باز" value={num(k.openOrders)} hint={`ارزش: ${compactMoney(k.openOrdersValue)} ${cur}`} icon={ShoppingCart} tone="lilac" alert={k.lateOrders > 0} onClick={() => navigate('/sales/orders')} />
         <Stat label="مطالبات" value={compactMoney(k.receivable)} hint={`${cur} — مانده حساب مشتریان`} icon={HandCoins} tone="amber" onClick={() => navigate('/finance')} />
         <Stat label="سرنخ‌های داغ" value={num(k.hotLeads)} hint={`${num(k.warmLeads)} گرم · ${num(k.newLeadsMonth)} سرنخ جدید این ماه`} icon={Flame} tone="rose" onClick={() => navigate('/crm/leads')} />
       </div>
@@ -119,7 +119,7 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        <Card title="سفارش‌ها در هر مرحله" subtitle={`ارزش سفارش‌های باز (${cur})`} icon={ShoppingCart}>
+        <Card title="سفارش‌های فروش در هر مرحله" subtitle={`ارزش سفارش‌های مشتریان (${cur})`} icon={ShoppingCart}>
           <BarList
             rows={data.pipelineStages.filter((s: any) => !s.final).map((s: any) => ({ key: s.key, label: s.label, value: s.value, color: s.color, hint: `(${num(s.count)})` }))}
             format={compactMoney}

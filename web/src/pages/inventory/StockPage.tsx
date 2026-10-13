@@ -12,27 +12,29 @@ import { dateTime, money, num } from '../../lib/format';
 
 const WH_KINDS: Record<string, string> = { parts: 'قطعات و مواد', finished: 'محصول نهایی', repair: 'تعمیرات / قرنطینه' };
 
-export default function StockPage() {
+export default function StockPage({ view = 'stock' }: { view?: 'stock' | 'moves' }) {
   const { warehouses } = useSession();
-  const [tab, setTab] = useState<'levels' | 'moves' | 'warehouses'>('levels');
+  const [tab, setTab] = useState<'levels' | 'warehouses'>('levels');
   const [wh, setWh] = useState('');
   const [search, setSearch] = useState('');
   const [moving, setMoving] = useState(false);
   const [adjusting, setAdjusting] = useState<any>(null);
   const [editingWh, setEditingWh] = useState<any>(null);
   const { data: stock = [], isLoading } = useApi<any[]>('/stock');
-  const { data: moves = [] } = useApi<any[]>(tab === 'moves' ? '/moves' : null);
+  const { data: moves = [] } = useApi<any[]>(view === 'moves' ? '/moves' : null);
 
   const levels = useMemo(() => stock.filter((s) => (!wh || s.warehouseId === wh) && (!search || `${s.name} ${s.sku}`.includes(search))), [stock, wh, search]);
   const filteredMoves = useMemo(() => moves.filter((m) => (!wh || m.fromWh === wh || m.toWh === wh) && (!search || `${m.itemName} ${m.sku} ${m.note}`.includes(search))), [moves, wh, search]);
 
   return (
     <div>
-      <PageHeader icon={ArrowLeftRight} title="موجودی و تراکنش‌های انبار" subtitle="هر تغییر موجودی یک سطر در دفتر انبار است — قابل ردیابی تا سند مبدأ"
-        actions={<Button variant="glow" icon={Plus} onClick={() => setMoving(true)}>تراکنش دستی</Button>} />
+      <PageHeader icon={view === 'moves' ? ArrowLeftRight : Warehouse}
+        title={view === 'moves' ? 'تراکنش‌های انبار' : 'موجودی انبار'}
+        subtitle={view === 'moves' ? 'دفتر مستقل ورود، خروج، انتقال و اصلاح موجودی با مرجع و کاربر ثبت‌کننده' : 'موجودی فعلی، مقدار رزروشده، موجودی آزاد و اصلاح شمارش کالاها'}
+        actions={view === 'moves' ? <Button variant="glow" icon={Plus} onClick={() => setMoving(true)}>تراکنش دستی</Button> : undefined} />
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <Tabs value={tab} onChange={setTab} tabs={[{ key: 'levels', label: 'سطح موجودی' }, { key: 'moves', label: 'دفتر تراکنش‌ها' }, { key: 'warehouses', label: 'انبارها', count: warehouses.length }]} />
-        {tab !== 'warehouses' && <>
+        {view === 'stock' && <Tabs value={tab} onChange={setTab} tabs={[{ key: 'levels', label: 'سطح موجودی' }, { key: 'warehouses', label: 'انبارها', count: warehouses.length }]} />}
+        {(view === 'moves' || tab !== 'warehouses') && <>
           <Select className="w-52" value={wh} onChange={(e) => setWh(e.target.value)}>
             <option value="">همه انبارها</option>{warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
           </Select>
@@ -40,26 +42,25 @@ export default function StockPage() {
         </>}
       </div>
 
-      {tab === 'levels' && (isLoading ? <Spinner /> : levels.length === 0 ? <Card><Empty title="موجودی ثبت نشده" /></Card> : (
+      {view === 'stock' && tab === 'levels' && (isLoading ? <Spinner /> : levels.length === 0 ? <Card><Empty title="موجودی ثبت نشده" /></Card> : (
         <Card pad={false} bodyClass="overflow-x-auto">
           <table className="tbl">
-            <thead><tr><th>کالا</th><th>انبار</th><th>موجودی</th><th>رزرو</th><th>آزاد</th><th>ارزش</th><th>عملیات</th></tr></thead>
+            <thead><tr><th>کالا</th><th>انبار</th><th>موجودی و اصلاح شمارش</th><th>رزرو</th><th>آزاد</th><th>ارزش</th></tr></thead>
             <tbody>{levels.map((s) => (
               <tr key={`${s.itemId}-${s.warehouseId}`}>
                 <td><Link to={`/inventory/items/${s.itemId}`} className="text-ink hover:text-iris">{s.name}</Link><div className="ltr text-right text-[11px] text-mist">{s.sku}</div></td>
                 <td className="text-xs">{s.warehouseName}</td>
-                <td className="num">{num(s.qty)} <span className="text-xs text-mist">{s.unit}</span></td>
+                <td><div className="flex items-center gap-2"><span className="num whitespace-nowrap">{num(s.qty)} <span className="text-xs text-mist">{s.unit}</span></span><Button size="sm" variant="outline" icon={ClipboardCheck} onClick={() => setAdjusting(s)}>اصلاح</Button></div></td>
                 <td className="num text-amber">{s.reserved ? num(s.reserved) : '—'}</td>
                 <td className={clsx('num font-semibold', s.qty - s.reserved <= s.reorderPoint && s.reorderPoint > 0 ? 'text-rose' : 'text-ink')}>{num(s.qty - s.reserved)}</td>
                 <td className="num text-xs text-mist">{money(s.qty * s.cost)}</td>
-                <td><Button size="sm" variant="ghost" icon={ClipboardCheck} onClick={() => setAdjusting(s)}>اصلاح شمارش</Button></td>
               </tr>
             ))}</tbody>
           </table>
         </Card>
       ))}
 
-      {tab === 'moves' && (
+      {view === 'moves' && (
         <Card pad={false} bodyClass="overflow-x-auto">
           {filteredMoves.length === 0 ? <Empty title="تراکنشی یافت نشد" /> : (
             <table className="tbl">
@@ -87,7 +88,7 @@ export default function StockPage() {
         </Card>
       )}
 
-      {tab === 'warehouses' && (
+      {view === 'stock' && tab === 'warehouses' && (
         <div className="grid gap-4 md:grid-cols-3">
           {warehouses.map((w) => {
             const rows = stock.filter((s) => s.warehouseId === w.id);
@@ -116,7 +117,11 @@ export default function StockPage() {
   );
 }
 
-function StockAdjustmentModal({ stock, onClose }: { stock: any | null; onClose: () => void }) {
+export function StockMovesPage() {
+  return <StockPage view="moves" />;
+}
+
+export function StockAdjustmentModal({ stock, onClose }: { stock: any | null; onClose: () => void }) {
   const [countedQty, setCountedQty] = useState<number | ''>('');
   const [note, setNote] = useState('');
   useEffect(() => {

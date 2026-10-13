@@ -51,8 +51,8 @@ export function OrderFormModal({ open, onClose, order, lines: initialLines, defa
 
   return (
     <Modal open={open} onClose={onClose} size="xl" icon={FileText}
-      title={order ? `ویرایش ${order.number}` : 'پیش‌فاکتور / سفارش جدید'}
-      subtitle="سفارش از مرحله پیش‌فاکتور شروع می‌شود و با هر مرحله جلو می‌رود"
+      title={order ? `ویرایش سفارش فروش ${order.number}` : 'پیش‌فاکتور / سفارش فروش جدید'}
+      subtitle="سفارش مشتری از مرحله پیش‌فاکتور شروع می‌شود و با هر مرحله جلو می‌رود"
       footer={<>
         <div className="ml-auto text-sm text-mist">جمع کل: <b className="num text-lg text-ink">{money(total, settings.company.currency)}</b></div>
         <Button variant="ghost" onClick={onClose}>انصراف</Button>

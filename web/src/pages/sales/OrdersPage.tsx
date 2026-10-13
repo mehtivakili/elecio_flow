@@ -37,13 +37,13 @@ export default function OrdersPage() {
     <div>
       <PageHeader
         icon={ShoppingCart}
-        title="سفارش‌ها"
-        subtitle="از پیش‌فاکتور تا تحویل و نصب — هر سفارش با کنترل‌های مرحله‌ای"
+        title="سفارش‌های فروش"
+        subtitle="سفارش‌های دریافتی از مشتری؛ از پیش‌فاکتور تا تحویل و نصب"
         actions={<Button variant="glow" icon={FilePlus2} onClick={() => setCreating(null)}>پیش‌فاکتور جدید</Button>}
       />
       <div className="mb-5 grid grid-cols-2 gap-4 md:grid-cols-4">
         <Stat label="پیش‌فاکتورهای باز" value={num(open.filter((o) => o.stage === 'quote').length)} hint={`${compactMoney(open.filter((o) => o.stage === 'quote').reduce((s, o) => s + o.total, 0))} ${cur}`} tone="sky" />
-        <Stat label="سفارش در جریان" value={num(open.filter((o) => o.stage !== 'quote').length)} hint={`${compactMoney(open.filter((o) => o.stage !== 'quote').reduce((s, o) => s + o.total, 0))} ${cur}`} tone="lilac" />
+        <Stat label="فروش در جریان" value={num(open.filter((o) => o.stage !== 'quote').length)} hint={`${compactMoney(open.filter((o) => o.stage !== 'quote').reduce((s, o) => s + o.total, 0))} ${cur}`} tone="lilac" />
         <Stat label="با تأخیر" value={num(open.filter((o) => o.late).length)} hint="عبور از SLA مرحله یا موعد تحویل" tone="rose" alert={open.some((o) => o.late)} />
         <Stat label="مانده دریافتی سفارش‌های باز" value={compactMoney(open.filter((o) => o.stage !== 'quote').reduce((s, o) => s + o.balance, 0))} hint={cur} tone="amber" />
       </div>
