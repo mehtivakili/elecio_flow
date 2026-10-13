@@ -1,10 +1,10 @@
 import { Router } from 'express';
-import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { one, q, run, uid, insert } from '../db.ts';
 import { HttpError, JWT_SECRET, getSettings, h, requireAuth, saveSettings, guard, logActivity } from '../core.ts';
 import { ROLES } from '../../../shared/defaults.ts';
 import { rescoreOrg } from '../services/crm.ts';
+import { hashPassword, PASSWORD_MIN_LENGTH, passwordHashNeedsUpgrade, verifyPassword } from '../security.ts';
 
 export const authRouter = Router();
 
@@ -15,8 +15,12 @@ authRouter.post('/login', h((req) => {
      WHERE u.username = ? AND u.active = 1 ${workspace ? 'AND o.slug = ?' : ''}`,
     String(username ?? '').trim().toLowerCase(), ...(workspace ? [workspace] : []),
   );
-  const user = users.find((u) => bcrypt.compareSync(String(password ?? ''), u.passwordHash));
+  const plainPassword = String(password ?? '');
+  const user = users.find((u) => verifyPassword(plainPassword, u.passwordHash));
   if (!user) throw new HttpError(401, 'نام کاربری یا رمز عبور اشتباه است');
+  if (passwordHashNeedsUpgrade(user.passwordHash)) {
+    run('UPDATE users SET password_hash = ? WHERE id = ?', hashPassword(plainPassword), user.id);
+  }
   const token = jwt.sign({ sub: user.id }, JWT_SECRET, { expiresIn: '7d' });
   return { token };
 }));
@@ -49,13 +53,14 @@ metaRouter.put('/settings', guard('settings'), h((req) => {
 metaRouter.post('/users', guard('settings'), h((req) => {
   const { username, fullName, password, role, phone } = req.body ?? {};
   if (!username || !fullName || !password) throw new HttpError(400, 'نام، نام کاربری و رمز الزامی است');
+  if (String(password).length < PASSWORD_MIN_LENGTH) throw new HttpError(400, `رمز عبور باید حداقل ${PASSWORD_MIN_LENGTH} کاراکتر باشد`);
   if (!ROLES.includes(role)) throw new HttpError(400, 'نقش نامعتبر است');
   if (role === 'owner' && req.user.role !== 'owner') throw new HttpError(403, 'فقط مالک می‌تواند مالک تعریف کند');
   const id = uid('usr');
   try {
     insert('users', {
       id, orgId: req.user.orgId, username: String(username).trim().toLowerCase(), fullName,
-      passwordHash: bcrypt.hashSync(password, 10), role, phone: phone ?? '', active: 1, createdAt: Date.now(),
+      passwordHash: hashPassword(password), role, phone: phone ?? '', active: 1, createdAt: Date.now(),
     }, ['id', 'org_id', 'username', 'full_name', 'password_hash', 'role', 'phone', 'active', 'created_at']);
   } catch {
     throw new HttpError(409, 'این نام کاربری قبلاً ثبت شده است');
@@ -77,6 +82,9 @@ metaRouter.put('/users/:id', guard('settings'), h((req) => {
        active = COALESCE(?, active) WHERE id = ?`,
     fullName ?? null, role ?? null, phone ?? null, active === undefined ? null : active ? 1 : 0, target.id,
   );
-  if (password) run('UPDATE users SET password_hash = ? WHERE id = ?', bcrypt.hashSync(password, 10), target.id);
+  if (password) {
+    if (String(password).length < PASSWORD_MIN_LENGTH) throw new HttpError(400, `رمز عبور باید حداقل ${PASSWORD_MIN_LENGTH} کاراکتر باشد`);
+    run('UPDATE users SET password_hash = ? WHERE id = ?', hashPassword(password), target.id);
+  }
   return { ok: true };
 }));

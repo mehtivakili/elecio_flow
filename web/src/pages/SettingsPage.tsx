@@ -288,11 +288,11 @@ function UsersTab() {
         </table>
       </Card>
       <Modal open={adding} onClose={() => setAdding(false)} title="کاربر جدید" icon={UserPlus} size="sm"
-        footer={<><Button variant="ghost" onClick={() => setAdding(false)}>انصراف</Button><Button variant="primary" disabled={!f.username || !f.fullName || f.password.length < 6} loading={create.isPending} onClick={() => create.mutate(undefined)}>ایجاد</Button></>}>
+        footer={<><Button variant="ghost" onClick={() => setAdding(false)}>انصراف</Button><Button variant="primary" disabled={!f.username || !f.fullName || f.password.length < 12} loading={create.isPending} onClick={() => create.mutate(undefined)}>ایجاد</Button></>}>
         <div className="space-y-4">
           <Field label="نام کامل"><Input value={f.fullName} onChange={(e) => setF({ ...f, fullName: e.target.value })} /></Field>
           <Field label="نام کاربری"><Input className="ltr" value={f.username} onChange={(e) => setF({ ...f, username: e.target.value })} /></Field>
-          <Field label="رمز عبور" hint="حداقل ۶ کاراکتر"><Input className="ltr" type="password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} /></Field>
+          <Field label="رمز عبور" hint="حداقل ۱۲ کاراکتر؛ فقط برای هش‌سازی به سرور ارسال می‌شود"><Input className="ltr" type="password" autoComplete="new-password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} /></Field>
           <Field label="نقش"><Select value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}>{ROLES.filter((r) => r !== 'owner').map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}</Select></Field>
         </div>
       </Modal>

@@ -9,19 +9,19 @@
  *
  *   npm run seed        → wipe and re-seed
  */
-import bcrypt from 'bcryptjs';
 import { fileURLToPath } from 'node:url';
 import { getDb, insert, one, q, resetDb, run, uid, val } from './db.ts';
 import { DAY, HOUR, getSettings, nextNumber, type AuthUser } from './core.ts';
 import { ELECIO_DEFAULTS } from '../../shared/defaults.ts';
 import { buildContactSearch, rescore, setStage, syncContactMeta } from './services/crm.ts';
 import { moveStock } from './services/inventory.ts';
+import { hashPassword, seedPassword } from './security.ts';
 import {
   advanceOrder, advanceWorkOrder, allocateOrder, createTicket, createWorkOrder, recalcOrder, recordQc,
   setTicketStatus, shipOrder,
 } from './services/workflow.ts';
 
-export function seed() {
+export function seed(password = seedPassword()) {
   const realNow = Date.now;
   const today = realNow();
   const midnight = new Date(today); midnight.setHours(0, 0, 0, 0);
@@ -39,7 +39,7 @@ export function seed() {
     }, ['id', 'name', 'slug', 'settings_json', 'counters_json', 'created_at']);
 
     /* ───────── People ───────── */
-    const hash = bcrypt.hashSync('elecio123', 10);
+    const hash = hashPassword(password);
     const people: Record<string, AuthUser> = {};
     for (const [username, fullName, role] of [
       ['admin', 'مدیر سیستم', 'owner'],
@@ -567,13 +567,14 @@ export function seed() {
 
     clock = today;
     for (const { id } of q('SELECT id FROM contacts WHERE org_id = ?', orgId)) syncContactMeta(id);
-    console.log(`[seed] workspace "elecio" ready — users: admin / sara / reza / ali / neda (password: elecio123)`);
+    console.log('[seed] workspace "elecio" ready — initial account passwords were securely hashed');
   } finally {
     Date.now = realNow;
   }
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1] && process.argv.includes('--reset')) {
+  const password = seedPassword();
   resetDb();
-  seed();
+  seed(password);
 }

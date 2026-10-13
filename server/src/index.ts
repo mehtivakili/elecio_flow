@@ -18,6 +18,9 @@ const PORT = Number(process.env.ELECIO_API_PORT) || 4600;
 const here = path.dirname(fileURLToPath(import.meta.url));
 
 getDb();
+if (val<number>("SELECT COUNT(*) FROM users WHERE password_hash NOT LIKE '$2a$%' AND password_hash NOT LIKE '$2b$%' AND password_hash NOT LIKE '$2y$%'")) {
+  throw new Error('Unsafe password storage detected; refusing to start');
+}
 if (!val<number>('SELECT COUNT(*) FROM orgs')) {
   console.log('[elecio-flow] empty database — seeding Elecio workspace');
   seed();

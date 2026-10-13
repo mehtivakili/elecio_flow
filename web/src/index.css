@@ -19,6 +19,13 @@
 
 html, body, #root { height: 100%; }
 
+@media (min-width: 1280px) {
+  .product-flow-grid {
+    height: var(--flow-board-height);
+    grid-template-rows: repeat(var(--flow-board-rows), minmax(0, 1fr));
+  }
+}
+
 body {
   margin: 0;
   background: #253237;

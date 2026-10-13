@@ -340,7 +340,7 @@ export function Shell({ children }: { children?: ReactNode }) {
       <div className="aurora -bottom-56 left-1/3 bg-rose" style={{ opacity: 0.08 }} />
       <Sidebar />
       <div className="relative z-10 flex min-w-0 flex-1 flex-col">
-        <header className="no-print flex h-16 shrink-0 items-center gap-3 border-b border-line/50 bg-night/40 px-5 backdrop-blur-md">
+        <header className="no-print relative z-[300] flex h-16 shrink-0 items-center gap-3 overflow-visible border-b border-line/50 bg-night/40 px-5 backdrop-blur-md">
           <button
             onClick={() => setPalette(true)}
             className="flex h-9 w-full max-w-md items-center gap-2.5 rounded-xl border border-line/70 bg-deep/50 px-3 text-sm text-mist transition hover:border-mist"
@@ -354,7 +354,7 @@ export function Shell({ children }: { children?: ReactNode }) {
             <AlertsMenu />
           </div>
         </header>
-        <main ref={mainRef} className="flex-1 overflow-y-auto">
+        <main ref={mainRef} className="relative z-0 flex-1 overflow-y-auto">
           <div className="mx-auto w-full max-w-[1500px] px-5 py-6 lg:px-8">{children ?? <Outlet />}</div>
         </main>
       </div>

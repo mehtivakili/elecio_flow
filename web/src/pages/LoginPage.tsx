@@ -78,10 +78,6 @@ export default function LoginPage() {
             {error && <p className="rounded-xl bg-rose/10 px-3 py-2 text-sm text-rose">{error}</p>}
             <Button type="submit" variant="primary" size="lg" icon={LogIn} loading={loading} className="w-full">ورود</Button>
           </div>
-          <p className="mt-5 text-center text-[11px] leading-5 text-mist/80">
-            حساب‌های نمونه: <span className="ltr">admin · sara · reza · ali · neda</span>
-            <br />رمز پیش‌فرض در فایل README آمده است.
-          </p>
         </form>
       </div>
     </div>
