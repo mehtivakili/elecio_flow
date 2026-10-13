@@ -12,7 +12,7 @@ import { AlertRow } from '../components/Shell';
 import { Timeline } from '../components/flow';
 import { UNIT_STATUS } from '@shared/defaults';
 import { compactMoney, dateLong, dateTime, isolateCodes, num, relative } from '../lib/format';
-import { PRODUCT_FLOW } from './ProductFlowPage';
+import { PRODUCT_FLOW_ICONS } from './ProductFlowPage';
 
 const ENTITY_LINK: Record<string, (id: string) => string> = {
   contact: (id) => `/crm/contacts/${id}`,
@@ -55,17 +55,18 @@ export default function DashboardPage() {
           </div>
           <Link to="/operations/product-flow" className="flex items-center gap-1 text-xs font-medium text-iris hover:text-ink">مشاهده جزئیات و چک‌لیست‌ها <ChevronLeft size={14} /></Link>
         </div>
-        <div className="grid grid-cols-2 gap-px bg-line/40 md:grid-cols-4 xl:grid-cols-8">
-          {PRODUCT_FLOW.map((step) => (
-            <Link key={step.number} to={step.to} className="group relative min-h-[128px] bg-deep/65 p-3 transition hover:bg-ink/[0.06]">
+        <div className="grid grid-cols-2 gap-px bg-line/40 md:grid-cols-3 xl:grid-cols-6">
+          {settings.productFlow.map((step, index) => {
+            const StepIcon = PRODUCT_FLOW_ICONS[step.icon];
+            return <Link key={step.id} to={step.to} className="group relative min-h-[128px] bg-deep/65 p-3 transition hover:bg-ink/[0.06]">
               <div className="flex items-center justify-between">
-                <span className="num flex h-7 w-7 items-center justify-center rounded-xl text-xs font-extrabold text-night" style={{ background: step.color }}>{step.number}</span>
-                <step.icon size={17} style={{ color: step.color }} />
+                <span className="num flex h-7 w-7 items-center justify-center rounded-xl text-xs font-extrabold text-night" style={{ background: step.color }}>{index + 1}</span>
+                <StepIcon size={17} style={{ color: step.color }} />
               </div>
               <h3 className="mt-3 text-xs font-semibold leading-5 text-ink">{step.title}</h3>
               <p className="mt-1 text-[10px] leading-5 text-mist">{step.owner}</p>
-            </Link>
-          ))}
+            </Link>;
+          })}
         </div>
       </section>
 

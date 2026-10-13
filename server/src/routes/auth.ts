@@ -37,7 +37,7 @@ metaRouter.get('/meta', h((req) => {
 metaRouter.put('/settings', guard('settings'), h((req) => {
   const allowed = [
     'company', 'lifecycleStages', 'leadSources', 'customerTypes', 'lostReasons', 'customFields', 'scoring',
-    'orderStages', 'workOrderStages', 'qcChecklist', 'ticketTypes', 'ticketSlaHours', 'expenseCategories',
+    'orderStages', 'workOrderStages', 'productFlow', 'qcChecklist', 'ticketTypes', 'ticketSlaHours', 'expenseCategories',
   ];
   const patch = Object.fromEntries(Object.entries(req.body ?? {}).filter(([k]) => allowed.includes(k)));
   const settings = saveSettings(req.user.orgId, patch);

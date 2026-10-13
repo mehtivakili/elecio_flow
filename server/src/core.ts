@@ -85,6 +85,12 @@ export function getSettings(orgId: string): WorkspaceSettings {
   const row = one('SELECT settings_json FROM orgs WHERE id = ?', orgId);
   // Fill in any section a tenant has never customised from the defaults.
   const settings = { ...ELECIO_DEFAULTS, ...(row?.settings ?? {}) } as WorkspaceSettings;
+  // Guard against text damaged by a non-UTF-8 client. A run of replacement
+  // question marks is not valid Persian process content; fall back to the
+  // complete preset so the editor can save a clean copy.
+  if (!Array.isArray(settings.productFlow) || /\?{3,}/.test(JSON.stringify(settings.productFlow))) {
+    settings.productFlow = structuredClone(ELECIO_DEFAULTS.productFlow);
+  }
   settingsCache.set(orgId, settings);
   return settings;
 }

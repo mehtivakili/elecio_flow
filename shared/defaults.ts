@@ -55,6 +55,25 @@ export interface ScoringSettings {
   firstTouchHours: number;
 }
 
+export interface ProductFlowSubsection {
+  id: string;
+  title: string;
+  items: string[];
+}
+
+export interface ProductFlowSection {
+  id: string;
+  title: string;
+  owner: string;
+  description: string;
+  output: string;
+  color: string;
+  icon: 'order' | 'supply' | 'production' | 'warehouse' | 'delivery' | 'support';
+  to: string;
+  action: string;
+  subsections: ProductFlowSubsection[];
+}
+
 export interface WorkspaceSettings {
   company: {
     name: string;
@@ -77,6 +96,7 @@ export interface WorkspaceSettings {
   scoring: ScoringSettings;
   orderStages: StageDef[];
   workOrderStages: StageDef[];
+  productFlow: ProductFlowSection[];
   qcChecklist: string[];
   ticketTypes: OptionDef[];
   ticketSlaHours: Record<'urgent' | 'high' | 'normal' | 'low', number>;
@@ -165,6 +185,55 @@ export const ELECIO_DEFAULTS: WorkspaceSettings = {
     { key: 'testing', label: 'تست و کنترل کیفیت', color: '#5EC8E5', slaDays: 2, gate: 'qc_pass' },
     { key: 'packaging', label: 'بسته‌بندی', color: '#C2DFE3', slaDays: 1 },
     { key: 'done', label: 'تکمیل و ورود به انبار', color: '#0FD69D', final: true },
+  ],
+  productFlow: [
+    {
+      id: 'order', title: 'سفارش', owner: 'فروش و مهندسی', icon: 'order', color: '#F5B85A', to: '/sales/orders', action: 'مدیریت سفارش‌ها',
+      description: 'نیاز مشتری و مدارک فنی قبل از تعهد زمان و قیمت نهایی کنترل می‌شود.', output: 'سفارش تأییدشده و قابل برنامه‌ریزی',
+      subsections: [
+        { id: 'order-review', title: 'بررسی سفارش', items: ['BOM', 'Gerber', 'Pick & Place', 'بررسی قیمت مناسب', 'بررسی موجودی قطعات'] },
+      ],
+    },
+    {
+      id: 'supply', title: 'تأمین و کیتینگ قطعات', owner: 'تأمین و انبار', icon: 'supply', color: '#5EC8E5', to: '/scm/purchase-orders', action: 'سفارش‌های خرید',
+      description: 'کسری‌ها خریداری و همه اجزای موردنیاز به‌صورت کیت کامل آماده می‌شوند.', output: 'کیت کامل و رزروشده برای تولید',
+      subsections: [
+        { id: 'electronics', title: 'قطعات الکترونیکی', items: ['کارت حافظه (SD Card)', 'آداپتور ۱۲ ولت DC', 'کابل DB25', 'نمایشگر OLED', 'سیم SH و فلت', 'پروگرامر و پورت XH'] },
+        { id: 'mechanical', title: 'قطعات مکانیکی', items: ['باکس و جعبه لیزر', 'طلق OLED', 'Spacer', 'چسب قطره‌ای', 'آهن‌ربا'] },
+      ],
+    },
+    {
+      id: 'production', title: 'تولید', owner: 'خط تولید و کنترل کیفیت', icon: 'production', color: '#779BE7', to: '/production/work-orders', action: 'دستورهای تولید',
+      description: 'هر شماره‌سریال مراحل اجباری تولید را جداگانه و به‌ترتیب طی می‌کند.', output: 'دستگاه کامل، تست‌شده و آماده ورود به انبار',
+      subsections: [
+        { id: 'software', title: 'آماده‌سازی نرم‌افزار', items: ['پروگرام ESP', 'Firmware', 'Flash', 'Mount پوشه Data', 'فعال‌سازی License', 'راه‌اندازی سیستم گزارش‌گیری'] },
+        { id: 'assembly', title: 'مونتاژ', items: ['نصب Spacer', 'لحیم‌کاری OLED', 'Power wire', 'Power button', 'بستن پیچ داخل دستگاه', 'نصب OLED و SH', 'نصب Flat', 'چسب‌کاری', 'نصب طلق OLED', 'نصب آهن‌ربا'] },
+        { id: 'quality', title: 'تست و کنترل کیفیت', items: ['اجرای چک‌لیست QC', 'ثبت نتیجه برای هر سریال', 'رفع ایراد و QC مجدد'] },
+        { id: 'packing', title: 'بسته‌بندی', items: ['نایلون دستگاه', 'آداپتور', 'کابل', 'محافظ حباب‌دار', 'کاتالوگ', 'پرینت جعبه', 'لوگو', 'کارت گارانتی'] },
+      ],
+    },
+    {
+      id: 'warehouse', title: 'انبارداری و ارسال', owner: 'انبار محصول و لجستیک', icon: 'warehouse', color: '#F5B85A', to: '/units?status=in_stock', action: 'دستگاه‌های آماده',
+      description: 'ورود محصول، تخصیص به سفارش و خروج محموله با اسناد حمل ثبت می‌شود.', output: 'محموله قابل رهگیری',
+      subsections: [
+        { id: 'warehouse-in', title: 'انبار محصول', items: ['انبارداری محصول', 'تخصیص سریال به سفارش'] },
+        { id: 'shipping', title: 'خروج و ارسال', items: ['لیبل و کد تحویل', 'ترخیص و مجوز خروج', 'ثبت حمل‌کننده و رهگیری', 'تحویل محموله'] },
+      ],
+    },
+    {
+      id: 'delivery', title: 'تحویل یا نصب', owner: 'لجستیک و نصب', icon: 'delivery', color: '#0FD69D', to: '/service/tickets?type=installation', action: 'برنامه نصب',
+      description: 'محصول مستقیم تحویل یا توسط تیم فنی در محل مشتری نصب می‌شود.', output: 'دستگاه فعال نزد مشتری',
+      subsections: [
+        { id: 'delivery-install', title: 'تحویل مشتری', items: ['هماهنگی زمان تحویل', 'ارسال برای مشتری', 'نصب و راه‌اندازی', 'ثبت محل و تاریخ نصب', 'تأیید تحویل مشتری'] },
+      ],
+    },
+    {
+      id: 'support', title: 'پشتیبانی پس از فروش', owner: 'خدمات مشتریان', icon: 'support', color: '#FF499E', to: '/service/tickets', action: 'تیکت‌های خدمات',
+      description: 'درخواست‌ها با اتصال به مشتری، سریال، گارانتی و سابقه ساخت پیگیری می‌شوند.', output: 'خدمت قابل سنجش و مشتری پشتیبانی‌شده',
+      subsections: [
+        { id: 'after-sales', title: 'خدمات پس از فروش', items: ['پشتیبانی فنی', 'گارانتی و تعمیر', 'پیگیری SLA', 'تاریخچه سرویس دستگاه', 'ثبت رضایت مشتری'] },
+      ],
+    },
   ],
   qcChecklist: [
     'روشن‌شدن و تست ولتاژ تغذیه',
