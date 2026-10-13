@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Factory, ArrowLeft, ShieldAlert, ClipboardCheck, Layers, Cpu, PackagePlus, CheckCircle2, XCircle, History, Ban, ShoppingCart } from 'lucide-react';
+import { Factory, ArrowLeft, ShieldAlert, ClipboardCheck, Layers, Cpu, PackagePlus, CheckCircle2, XCircle, History, Ban, ShoppingCart, Code2, Wrench, PackageCheck } from 'lucide-react';
 import clsx from 'clsx';
 import { ApiError, post } from '../../lib/api';
 import { useAction, useApi } from '../../lib/hooks';
@@ -11,6 +11,13 @@ import { PriorityPill, UnitStatusPill, WoStagePill } from '../../components/doma
 import { StageTrack, Timeline } from '../../components/flow';
 import { date, dateTime, num } from '../../lib/format';
 
+const DEVICE_STEPS = [
+  { key: 'firmware', label: 'نرم‌افزار', icon: Code2, color: '#B48CF2' },
+  { key: 'assembly', label: 'مونتاژ', icon: Wrench, color: '#779BE7' },
+  { key: 'testing', label: 'QC', icon: ClipboardCheck, color: '#5EC8E5' },
+  { key: 'packaging', label: 'بسته‌بندی', icon: PackageCheck, color: '#C2DFE3' },
+] as const;
+
 export default function WorkOrderPage() {
   const { id } = useParams();
   const { settings, userName, warehouses } = useSession();
@@ -20,12 +27,17 @@ export default function WorkOrderPage() {
   const [blocked, setBlocked] = useState<ApiError | null>(null);
   const [note, setNote] = useState('');
   const [qcUnit, setQcUnit] = useState<any>(null);
+  const [selectedUnits, setSelectedUnits] = useState<string[]>([]);
   const advance = useAction((body: any) => post(`/work-orders/${id}/advance`, body), {
     success: 'دستور تولید به مرحله بعد رفت',
     onSuccess: () => { setBlocked(null); setNote(''); },
     onError: (e) => { if (e.status === 409 && e.details?.blockers) setBlocked(e); else toast(e.message, 'error'); },
   });
   const cancel = useAction(() => post(`/work-orders/${id}/cancel`), { success: 'دستور تولید لغو شد' });
+  const setUnitSteps = useAction(
+    (body: { unitIds: string[]; step: string; completed: boolean }) => post(`/work-orders/${id}/unit-steps`, body),
+    { success: (r: any) => `مرحله برای ${num(r.updated)} دستگاه ثبت شد`, onSuccess: () => setSelectedUnits([]) },
+  );
 
   if (isLoading || !data) return <Spinner />;
   const w = data.workOrder;
@@ -35,6 +47,12 @@ export default function WorkOrderPage() {
   const open = w.status === 'open';
   const short = data.needs.filter((n: any) => n.short > 0);
   const passed = data.units.filter((u: any) => u.qcResult === 'pass').length;
+  const stepDone = (unit: any, step: string) => step === 'testing'
+    ? unit.qcResult === 'pass'
+    : data.unitSteps.some((s: any) => s.unitId === unit.id && s.step === step);
+  const currentDeviceStep = DEVICE_STEPS.find((s) => s.key === w.stage);
+  const activeUnits = data.units.filter((u: any) => u.status !== 'scrapped');
+  const currentPending = currentDeviceStep ? activeUnits.filter((u: any) => !stepDone(u, currentDeviceStep.key)) : [];
 
   return (
     <div className="space-y-6">
@@ -47,6 +65,64 @@ export default function WorkOrderPage() {
         </>} />
 
       <Card><StageTrack stages={stages} current={w.stage} history={data.history} closed={w.status === 'done'} /></Card>
+
+      {data.units.length > 0 && (
+        <Card
+          title="رهگیری اجباری هر دستگاه"
+          subtitle={`${num(activeUnits.length)} شماره‌سریال — هر دستگاه باید چهار ایستگاه تولید را به‌ترتیب کامل کند`}
+          icon={Cpu}
+          pad={false}
+          actions={currentDeviceStep && currentDeviceStep.key !== 'testing' && open && <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="ghost" onClick={() => setSelectedUnits(currentPending.map((u: any) => u.id))}>انتخاب دستگاه‌های معطل</Button>
+            <Button size="sm" variant="action" icon={CheckCircle2} loading={setUnitSteps.isPending} disabled={!selectedUnits.length}
+              onClick={() => setUnitSteps.mutate({ unitIds: selectedUnits, step: currentDeviceStep.key, completed: true })}>
+              تکمیل «{currentDeviceStep.label}» برای انتخاب‌شده‌ها
+            </Button>
+          </div>}
+        >
+          <div className="border-b border-line/50 px-5 pb-4">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {DEVICE_STEPS.map((step) => {
+                const done = activeUnits.filter((u: any) => stepDone(u, step.key)).length;
+                const active = w.stage === step.key;
+                return <div key={step.key} className={clsx('rounded-xl border px-3 py-2.5', active ? 'bg-ink/[0.06]' : 'border-line/50 bg-ink/[0.025]')} style={active ? { borderColor: `${step.color}80` } : undefined}>
+                  <div className="flex items-center gap-2 text-xs" style={{ color: step.color }}><step.icon size={14} />{step.label}</div>
+                  <div className="mt-1 text-sm font-bold text-ink"><span className="num">{num(done)}</span><span className="text-xs font-normal text-mist"> از {num(activeUnits.length)} دستگاه</span></div>
+                </div>;
+              })}
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="tbl min-w-[760px]">
+              <thead><tr>
+                <th className="w-10">{currentDeviceStep && currentDeviceStep.key !== 'testing' && <input type="checkbox" aria-label="انتخاب همه دستگاه‌های معطل" checked={currentPending.length > 0 && currentPending.every((u: any) => selectedUnits.includes(u.id))} onChange={(e) => setSelectedUnits(e.target.checked ? currentPending.map((u: any) => u.id) : [])} />}</th>
+                <th>شماره سریال</th>
+                {DEVICE_STEPS.map((s) => <th key={s.key} className="text-center">{s.label}</th>)}
+                <th>پیشرفت</th>
+              </tr></thead>
+              <tbody>{data.units.map((unit: any) => {
+                const completed = DEVICE_STEPS.filter((s) => stepDone(unit, s.key)).length;
+                const selectable = !!currentDeviceStep && currentDeviceStep.key !== 'testing' && !stepDone(unit, currentDeviceStep.key) && unit.status !== 'scrapped';
+                return <tr key={unit.id} className={unit.status === 'scrapped' ? 'opacity-40' : ''}>
+                  <td><input type="checkbox" aria-label={`انتخاب ${unit.serial}`} disabled={!selectable} checked={selectedUnits.includes(unit.id)} onChange={(e) => setSelectedUnits((old) => e.target.checked ? [...old, unit.id] : old.filter((x) => x !== unit.id))} /></td>
+                  <td><Link to={`/units/${unit.serial}`} className="ltr font-mono text-xs text-ink hover:text-iris">{unit.serial}</Link></td>
+                  {DEVICE_STEPS.map((step) => {
+                    const done = stepDone(unit, step.key);
+                    return <td key={step.key} className="text-center">
+                      <span className={clsx('inline-flex h-7 w-7 items-center justify-center rounded-full', done ? 'bg-mint/15 text-mint' : w.stage === step.key ? 'bg-amber/15 text-amber' : 'bg-ink/[0.04] text-slate')} title={done ? 'تکمیل شده' : w.stage === step.key ? 'در انتظار انجام' : 'انجام نشده'}>
+                        {done ? <CheckCircle2 size={15} /> : <span className="h-1.5 w-1.5 rounded-full bg-current" />}
+                      </span>
+                    </td>;
+                  })}
+                  <td><div className="flex items-center gap-2"><div className="h-1.5 w-20 overflow-hidden rounded-full bg-line"><div className="h-full rounded-full bg-mint transition-all" style={{ width: `${completed / DEVICE_STEPS.length * 100}%` }} /></div><span className="num text-[11px] text-mist">{num(completed)}/{num(DEVICE_STEPS.length)}</span></div></td>
+                </tr>;
+              })}</tbody>
+            </table>
+          </div>
+          {currentDeviceStep?.key === 'testing' && <p className="border-t border-line/50 px-5 py-3 text-xs text-mist">در مرحله QC، نتیجه هر دستگاه از جدول «دستگاه‌ها و کنترل کیفیت» ثبت می‌شود.</p>}
+        </Card>
+      )}
 
       <div className="grid gap-6 xl:grid-cols-[1fr_340px]">
         <div className="min-w-0 space-y-6">
@@ -79,7 +155,7 @@ export default function WorkOrderPage() {
                     <td className="ltr text-right text-xs">{u.fwVersion || '—'}</td>
                     <td>{u.qcResult === 'pass' ? <span className="flex items-center gap-1 text-xs text-mint"><CheckCircle2 size={14} />قبول</span>
                       : u.qcResult === 'fail' ? <span className="flex items-center gap-1 text-xs text-rose"><XCircle size={14} />مردود</span> : <span className="text-xs text-mist">انجام نشده</span>}</td>
-                    <td>{open && u.status === 'in_production' && <Button size="sm" variant={u.qcResult === 'pass' ? 'ghost' : 'action'} icon={ClipboardCheck} onClick={() => setQcUnit(u)}>{u.qcResult ? 'QC مجدد' : 'ثبت QC'}</Button>}</td>
+                    <td>{open && w.stage === 'testing' && u.status === 'in_production' && <Button size="sm" variant={u.qcResult === 'pass' ? 'ghost' : 'action'} icon={ClipboardCheck} onClick={() => setQcUnit(u)}>{u.qcResult ? 'QC مجدد' : 'ثبت QC'}</Button>}</td>
                   </tr>
                 ))}</tbody>
               </table>

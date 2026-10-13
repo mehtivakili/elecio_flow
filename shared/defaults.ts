@@ -160,8 +160,8 @@ export const ELECIO_DEFAULTS: WorkspaceSettings = {
   workOrderStages: [
     { key: 'planned', label: 'برنامه‌ریزی', color: '#9DB4C0', slaDays: 3 },
     { key: 'kitting', label: 'کیتینگ قطعات', color: '#F5B85A', slaDays: 2, gate: 'kitting' },
+    { key: 'firmware', label: 'آماده‌سازی نرم‌افزار', color: '#B48CF2', slaDays: 1 },
     { key: 'assembly', label: 'مونتاژ', color: '#779BE7', slaDays: 3 },
-    { key: 'firmware', label: 'نصب فریمور', color: '#B48CF2', slaDays: 1 },
     { key: 'testing', label: 'تست و کنترل کیفیت', color: '#5EC8E5', slaDays: 2, gate: 'qc_pass' },
     { key: 'packaging', label: 'بسته‌بندی', color: '#C2DFE3', slaDays: 1 },
     { key: 'done', label: 'تکمیل و ورود به انبار', color: '#0FD69D', final: true },

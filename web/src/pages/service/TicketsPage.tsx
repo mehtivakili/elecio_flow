@@ -16,11 +16,13 @@ export default function TicketsPage() {
   const [params, setParams] = useSearchParams();
   const { data = [], isLoading } = useApi<any[]>('/tickets');
   const [tab, setTab] = useState<'open' | 'resolved' | 'all'>('open');
-  const [type, setType] = useState('');
+  const [type, setType] = useState(() => params.get('type') ?? '');
   const [assignee, setAssignee] = useState('');
   const [search, setSearch] = useState('');
   const [creating, setCreating] = useState<{ contactId?: string | null; unitId?: string | null } | null>(null);
   useEffect(() => {
+    const requestedType = params.get('type');
+    if (requestedType) setType(requestedType);
     if (params.get('new') === '1') {
       setCreating({ contactId: params.get('contact'), unitId: params.get('unit') });
       ['new', 'contact', 'unit'].forEach((k) => params.delete(k)); setParams(params, { replace: true });

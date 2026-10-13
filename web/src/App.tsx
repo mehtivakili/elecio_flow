@@ -27,6 +27,7 @@ import TicketPage from './pages/service/TicketPage';
 import FinancePage from './pages/FinancePage';
 import TasksPage from './pages/TasksPage';
 import SettingsPage from './pages/SettingsPage';
+import ProductFlowPage from './pages/ProductFlowPage';
 
 export default function App() {
   const { token } = useAuth();
@@ -36,6 +37,7 @@ export default function App() {
       <Routes>
         <Route element={<Shell />}>
           <Route index element={<DashboardPage />} />
+          <Route path="operations/product-flow" element={<ProductFlowPage />} />
           <Route path="crm/contacts" element={<ContactsPage />} />
           <Route path="crm/contacts/:id" element={<ContactPage />} />
           <Route path="crm/pipeline" element={<PipelinePage />} />

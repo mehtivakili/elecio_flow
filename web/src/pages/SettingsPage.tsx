@@ -17,7 +17,7 @@ const GATES: Record<string, string> = {
   '': 'بدون کنترل', deposit: 'پیش‌پرداخت', full_payment: 'تسویه کامل', allocation: 'تخصیص کالا', shipment: 'ثبت محموله', kitting: 'کیتینگ قطعات', qc_pass: 'قبولی QC',
 };
 const SYSTEM_ORDER_KEYS = ['quote', 'production', 'allocation', 'installation', 'delivered'];
-const SYSTEM_WO_KEYS = ['planned', 'kitting', 'firmware', 'done'];
+const SYSTEM_WO_KEYS = ['planned', 'kitting', 'firmware', 'assembly', 'testing', 'packaging', 'done'];
 const MODULE_LABELS: Record<string, string> = {
   crm: 'CRM', sales: 'سفارش', scm: 'تأمین', inventory: 'انبار', production: 'تولید', units: 'دستگاه‌ها', service: 'خدمات', finance: 'مالی', tasks: 'کارها', settings: 'تنظیمات',
 };

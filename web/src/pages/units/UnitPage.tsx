@@ -1,8 +1,9 @@
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   Cpu, Wrench, Upload, StickyNote, Trash2, Factory, ShoppingCart, MapPin, Phone, ClipboardCheck, PackageCheck, Truck,
-  CheckCircle2, XCircle, Hammer, Bookmark, Unlink, Ticket, Box,
+  CheckCircle2, XCircle, Hammer, Bookmark, Unlink, Ticket, Box, History,
 } from 'lucide-react';
+import clsx from 'clsx';
 import { post, put } from '../../lib/api';
 import { useAction, useApi } from '../../lib/hooks';
 import { useSession } from '../../lib/session';
@@ -13,6 +14,7 @@ import { date, dateTime, num } from '../../lib/format';
 
 const EVENT_STYLE: Record<string, { color: string; icon: any }> = {
   created: { color: '#779BE7', icon: Factory }, firmware: { color: '#B48CF2', icon: Upload }, qc_pass: { color: '#0FD69D', icon: CheckCircle2 },
+  assembly: { color: '#779BE7', icon: Wrench }, packaging: { color: '#C2DFE3', icon: PackageCheck }, step_reopened: { color: '#F5B85A', icon: History },
   qc_fail: { color: '#FF499E', icon: XCircle }, stocked: { color: '#C2DFE3', icon: Box }, reserved: { color: '#F5B85A', icon: Bookmark },
   released: { color: '#9DB4C0', icon: Unlink }, shipped: { color: '#5EC8E5', icon: Truck }, installed: { color: '#0FD69D', icon: PackageCheck },
   repair: { color: '#B48CF2', icon: Hammer }, repaired: { color: '#0FD69D', icon: Wrench }, ticket: { color: '#FF499E', icon: Ticket },
@@ -68,6 +70,24 @@ export default function UnitPage() {
           return b.to ? <Link key={b.label} to={b.to}>{body}</Link> : <div key={b.label}>{body}</div>;
         })}
       </div>
+
+      <Card title="روند آماده‌سازی این دستگاه" subtitle="مراحل اجباری ثبت‌شده برای همین شماره‌سریال" icon={Factory}>
+        <div className="grid gap-2 sm:grid-cols-4">
+          {[
+            { key: 'firmware', label: 'آماده‌سازی نرم‌افزار', icon: Upload },
+            { key: 'assembly', label: 'مونتاژ', icon: Wrench },
+            { key: 'testing', label: 'تست و QC', icon: ClipboardCheck },
+            { key: 'packaging', label: 'بسته‌بندی', icon: PackageCheck },
+          ].map((step, index) => {
+            const record = (data.processSteps ?? []).find((s: any) => s.step === step.key);
+            const done = step.key === 'testing' ? u.qcResult === 'pass' : !!record;
+            return <div key={step.key} className={clsx('relative rounded-xl border p-3', done ? 'border-mint/35 bg-mint/[0.07]' : 'border-line/60 bg-ink/[0.025]')}>
+              <div className="flex items-center gap-2"><span className={clsx('flex h-8 w-8 items-center justify-center rounded-xl', done ? 'bg-mint/15 text-mint' : 'bg-ink/[0.05] text-mist')}>{done ? <CheckCircle2 size={16} /> : <step.icon size={16} />}</span><div><div className="text-xs font-semibold text-ink">{step.label}</div><div className="text-[10px] text-mist">مرحله {num(index + 1)}</div></div></div>
+              <div className={clsx('mt-3 text-[11px]', done ? 'text-mint' : 'text-mist')}>{done ? `تکمیل شده${record?.userName ? ` · ${record.userName}` : ''}` : 'در انتظار انجام'}</div>
+            </div>;
+          })}
+        </div>
+      </Card>
 
       <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
         <Card title="چرخه عمر دستگاه" subtitle="همه رویدادها از تولید تا امروز" icon={Cpu}>

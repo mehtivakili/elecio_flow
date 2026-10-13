@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Users, GitBranch, Flame, PhoneCall, Map, ShoppingCart, Truck, Building2, Boxes, ArrowLeftRight,
   Factory, Cpu, LifeBuoy, Wallet, ListChecks, Settings, PanelRightClose, PanelRightOpen, LogOut, Search, Bell,
   Plus, ChevronLeft, AlertTriangle, AlertOctagon, Info, CornerDownLeft, UserPlus, FileText, Wrench, PackagePlus,
-  type LucideIcon,
+  Route, type LucideIcon,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../lib/api';
@@ -48,6 +48,7 @@ function Sidebar() {
     },
     {
       label: 'سفارش و تأمین', items: [
+        { to: '/operations/product-flow', label: 'فرآیند تأمین محصول', icon: Route },
         { to: '/sales/orders', label: 'سفارش‌ها', icon: ShoppingCart, badge: count('sales') },
         { to: '/scm/purchase-orders', label: 'سفارش‌های خرید', icon: Truck, badge: count('scm') },
         { to: '/scm/suppliers', label: 'تأمین‌کنندگان', icon: Building2 },

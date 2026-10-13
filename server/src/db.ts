@@ -410,6 +410,22 @@ CREATE INDEX IF NOT EXISTS idx_units_status ON units(org_id, status);
 CREATE INDEX IF NOT EXISTS idx_units_order ON units(order_id);
 CREATE INDEX IF NOT EXISTS idx_units_contact ON units(contact_id);
 
+/* Mandatory, per-serial production checkpoints. A row means that one
+   physical device has completed that step; the work order cannot advance
+   until every non-scrapped unit has the required row. */
+CREATE TABLE IF NOT EXISTS unit_process_steps (
+  id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL,
+  unit_id TEXT NOT NULL REFERENCES units(id) ON DELETE CASCADE,
+  work_order_id TEXT NOT NULL REFERENCES work_orders(id) ON DELETE CASCADE,
+  step TEXT NOT NULL,
+  completed_at INTEGER NOT NULL,
+  completed_by TEXT,
+  note TEXT DEFAULT '',
+  UNIQUE (unit_id, step)
+);
+CREATE INDEX IF NOT EXISTS idx_unit_process_steps_work_order ON unit_process_steps(work_order_id, step);
+
 CREATE TABLE IF NOT EXISTS unit_events (
   id TEXT PRIMARY KEY,
   org_id TEXT NOT NULL,
@@ -497,6 +513,24 @@ export function getDb(): DatabaseSync {
   db = new DatabaseSync(DB_PATH);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
   db.exec(SCHEMA);
+  // Backfill checkpoints for databases created before per-device tracking.
+  // The current work-order stage proves that all preceding stages were passed.
+  db.exec(`
+    INSERT OR IGNORE INTO unit_process_steps (id, org_id, unit_id, work_order_id, step, completed_at, completed_by, note)
+    SELECT 'ups_mig_fw_' || u.id, u.org_id, u.id, u.work_order_id, 'firmware', COALESCE(w.started_at, u.created_at), NULL, 'بازیابی از سابقه دستور تولید'
+    FROM units u JOIN work_orders w ON w.id = u.work_order_id
+    WHERE w.stage IN ('assembly', 'testing', 'packaging', 'done');
+
+    INSERT OR IGNORE INTO unit_process_steps (id, org_id, unit_id, work_order_id, step, completed_at, completed_by, note)
+    SELECT 'ups_mig_as_' || u.id, u.org_id, u.id, u.work_order_id, 'assembly', COALESCE(w.started_at, u.created_at), NULL, 'بازیابی از سابقه دستور تولید'
+    FROM units u JOIN work_orders w ON w.id = u.work_order_id
+    WHERE w.stage IN ('testing', 'packaging', 'done');
+
+    INSERT OR IGNORE INTO unit_process_steps (id, org_id, unit_id, work_order_id, step, completed_at, completed_by, note)
+    SELECT 'ups_mig_pk_' || u.id, u.org_id, u.id, u.work_order_id, 'packaging', COALESCE(w.completed_at, u.built_at, u.created_at), NULL, 'بازیابی از سابقه دستور تولید'
+    FROM units u JOIN work_orders w ON w.id = u.work_order_id
+    WHERE w.stage = 'done';
+  `);
   return db;
 }
 

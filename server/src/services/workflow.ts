@@ -350,6 +350,25 @@ function woGate(gate: GateKind | undefined, wo: Row): string | null {
   return null;
 }
 
+const UNIT_STEP_LABELS: Record<string, string> = {
+  firmware: 'آماده‌سازی نرم‌افزار',
+  assembly: 'مونتاژ',
+  packaging: 'بسته‌بندی',
+};
+
+/** Every physical unit must finish the current production checkpoint. */
+function unitStepGate(stage: string, wo: Row): string | null {
+  if (stage === 'testing') return null; // QC is enforced by the qc_pass gate above.
+  if (!(stage in UNIT_STEP_LABELS)) return null;
+  const pending = val<number>(
+    `SELECT COUNT(*) FROM units u
+     WHERE u.work_order_id = ? AND u.status != 'scrapped'
+       AND NOT EXISTS (SELECT 1 FROM unit_process_steps s WHERE s.unit_id = u.id AND s.step = ?)`,
+    wo.id, stage,
+  );
+  return pending ? `${pending} دستگاه هنوز مرحله «${UNIT_STEP_LABELS[stage]}» را تکمیل نکرده‌اند` : null;
+}
+
 /** Leaving the kitting stage consumes the BOM and gives every device its serial number. */
 function kit(actor: Actor, wo: Row) {
   if (wo.startedAt) return;
@@ -410,12 +429,15 @@ export function advanceWorkOrder(actor: Actor, woId: string, opts: { to?: string
 
     if (to > from) {
       for (const stage of stages.slice(Math.max(from, 0), to)) {
-        const reason = woGate(stage.gate, { ...wo, startedAt: one('SELECT started_at FROM work_orders WHERE id = ?', woId)!.startedAt });
-        // Kitting moves real stock, so it cannot be forced past a shortage.
-        if (reason && (stage.gate === 'kitting' || !opts.force)) {
+        const currentWo = { ...wo, startedAt: one('SELECT started_at FROM work_orders WHERE id = ?', woId)!.startedAt };
+        const processReason = unitStepGate(stage.key, currentWo);
+        const reason = woGate(stage.gate, currentWo) ?? processReason;
+        // Stock consumption and per-device checkpoints are hard gates.
+        const hardGate = stage.gate === 'kitting' || !!processReason;
+        if (reason && (hardGate || !opts.force)) {
           throw new HttpError(409, reason, {
             blockers: [{ stage: stage.label, reason }],
-            canForce: stage.gate !== 'kitting' && ['owner', 'admin'].includes(actor.role),
+            canForce: !hardGate && ['owner', 'admin'].includes(actor.role),
           });
         }
         if (stage.gate === 'kitting') kit(actor, wo);
@@ -438,12 +460,72 @@ export function advanceWorkOrder(actor: Actor, woId: string, opts: { to?: string
   });
 }
 
+export function setUnitProcessStep(
+  actor: Actor,
+  woId: string,
+  input: { unitIds?: string[]; step?: string; completed?: boolean; note?: string },
+) {
+  return tx(() => {
+    const wo = one('SELECT * FROM work_orders WHERE id = ? AND org_id = ?', woId, actor.orgId);
+    if (!wo) throw new HttpError(404, 'دستور تولید پیدا نشد');
+    if (wo.status !== 'open') throw new HttpError(409, 'دستور تولید بسته است');
+    const step = String(input.step ?? '');
+    if (!(step in UNIT_STEP_LABELS)) throw new HttpError(400, 'مرحله دستگاه نامعتبر است');
+    if (wo.stage !== step) throw new HttpError(409, `اکنون فقط مرحله «${UNIT_STEP_LABELS[wo.stage] ?? wo.stage}» قابل ثبت است`);
+
+    const ids = [...new Set(input.unitIds ?? [])];
+    if (!ids.length) throw new HttpError(400, 'حداقل یک دستگاه را انتخاب کنید');
+    const units = q(
+      `SELECT * FROM units WHERE work_order_id = ? AND org_id = ? AND status != 'scrapped'`,
+      wo.id, actor.orgId,
+    ).filter((u) => ids.includes(u.id));
+    if (units.length !== ids.length) throw new HttpError(400, 'یک یا چند دستگاه متعلق به این دستور تولید نیست');
+
+    const complete = input.completed !== false;
+    const now = Date.now();
+    for (const unit of units) {
+      if (complete) {
+        if (step === 'assembly' && !one("SELECT id FROM unit_process_steps WHERE unit_id = ? AND step = 'firmware'", unit.id)) {
+          throw new HttpError(409, `ابتدا آماده‌سازی نرم‌افزار دستگاه ${unit.serial} را تکمیل کنید`);
+        }
+        if (step === 'packaging') {
+          if (!one("SELECT id FROM unit_process_steps WHERE unit_id = ? AND step = 'assembly'", unit.id)) {
+            throw new HttpError(409, `ابتدا مونتاژ دستگاه ${unit.serial} را تکمیل کنید`);
+          }
+          if (unit.qcResult !== 'pass') throw new HttpError(409, `QC دستگاه ${unit.serial} هنوز تأیید نشده است`);
+        }
+        run(
+          `INSERT INTO unit_process_steps (id, org_id, unit_id, work_order_id, step, completed_at, completed_by, note)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(unit_id, step) DO UPDATE SET completed_at = excluded.completed_at, completed_by = excluded.completed_by, note = excluded.note`,
+          uid('ups'), actor.orgId, unit.id, wo.id, step, now, actor.id, input.note ?? '',
+        );
+        if (step === 'firmware' && wo.fwVersion) run('UPDATE units SET fw_version = ? WHERE id = ?', wo.fwVersion, unit.id);
+        unitEvent(actor, unit.id, step, `${UNIT_STEP_LABELS[step]} تکمیل شد`, 'work_order', wo.id);
+      } else {
+        const hasLater = step === 'firmware'
+          ? one("SELECT id FROM unit_process_steps WHERE unit_id = ? AND step IN ('assembly','packaging')", unit.id) || unit.qcResult
+          : step === 'assembly' ? one("SELECT id FROM unit_process_steps WHERE unit_id = ? AND step = 'packaging'", unit.id) || unit.qcResult : null;
+        if (hasLater) throw new HttpError(409, `برای دستگاه ${unit.serial} مرحله بعدی ثبت شده و این مرحله قابل بازگشایی نیست`);
+        run('DELETE FROM unit_process_steps WHERE unit_id = ? AND step = ?', unit.id, step);
+        unitEvent(actor, unit.id, 'step_reopened', `مرحله ${UNIT_STEP_LABELS[step]} بازگشایی شد`, 'work_order', wo.id);
+      }
+    }
+    return { updated: units.length };
+  });
+}
+
 export function recordQc(
   actor: Actor, woId: string, input: { unitId: string; results: { check: string; ok: boolean }[]; note?: string },
 ) {
   return tx(() => {
     const unit = one('SELECT * FROM units WHERE id = ? AND org_id = ? AND work_order_id = ?', input.unitId, actor.orgId, woId);
     if (!unit) throw new HttpError(404, 'دستگاه در این دستور تولید نیست');
+    const wo = one('SELECT * FROM work_orders WHERE id = ? AND org_id = ?', woId, actor.orgId);
+    if (!wo || wo.stage !== 'testing') throw new HttpError(409, 'ثبت QC فقط در مرحله تست و کنترل کیفیت مجاز است');
+    if (!one("SELECT id FROM unit_process_steps WHERE unit_id = ? AND step = 'assembly'", unit.id)) {
+      throw new HttpError(409, 'ابتدا مونتاژ این دستگاه را تکمیل کنید');
+    }
     const passed = input.results.length > 0 && input.results.every((r) => r.ok);
     run(
       `INSERT INTO qc_checks (id, org_id, work_order_id, unit_id, results_json, passed, inspector_id, note, at)

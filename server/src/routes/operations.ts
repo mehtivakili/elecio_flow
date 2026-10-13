@@ -5,7 +5,7 @@ import {
 } from '../core.ts';
 import {
   advanceOrder, advanceWorkOrder, allocateOrder, cancelOrder, createTicket, createWorkOrder, createWorkOrdersForOrder,
-  kittingNeeds, lineAllocation, recalcOrder, recordQc, releaseUnit, setTicketStatus, shipOrder, slaState, stageHistory,
+  kittingNeeds, lineAllocation, recalcOrder, recordQc, releaseUnit, setTicketStatus, setUnitProcessStep, shipOrder, slaState, stageHistory,
 } from '../services/workflow.ts';
 import { setStage } from '../services/crm.ts';
 import { unitEvent } from '../services/inventory.ts';
@@ -194,6 +194,7 @@ productionRouter.get('/work-orders/:id', h((req) => {
     workOrder: wo,
     needs: kittingNeeds(wo.id),
     units: q('SELECT * FROM units WHERE work_order_id = ? ORDER BY serial', wo.id),
+    unitSteps: q('SELECT * FROM unit_process_steps WHERE work_order_id = ? ORDER BY completed_at', wo.id),
     qc: q('SELECT q.*, u.serial FROM qc_checks q JOIN units u ON u.id = q.unit_id WHERE q.work_order_id = ? ORDER BY q.at DESC', wo.id),
     history: stageHistory('work_order', wo.id),
     moves: q("SELECT m.*, i.name AS item_name, i.unit FROM stock_moves m JOIN items i ON i.id = m.item_id WHERE m.ref_type = 'work_order' AND m.ref_id = ? ORDER BY m.at", wo.id),
@@ -207,6 +208,7 @@ productionRouter.put('/work-orders/:id', h((req) => {
     ['priority', 'assignee_id', 'due_at', 'fw_version', 'hw_rev', 'source_wh', 'target_wh', 'notes', 'updated_at']);
 }));
 productionRouter.post('/work-orders/:id/advance', h((req) => advanceWorkOrder(req.user, req.params.id, req.body ?? {})));
+productionRouter.post('/work-orders/:id/unit-steps', h((req) => setUnitProcessStep(req.user, req.params.id, req.body ?? {})));
 productionRouter.post('/work-orders/:id/qc', h((req) => recordQc(req.user, req.params.id, req.body ?? {})));
 productionRouter.post('/work-orders/:id/cancel', h((req) => {
   const wo = mustFind('work_orders', req.params.id, req.user.orgId, 'دستور تولید');
@@ -242,6 +244,7 @@ unitsRouter.get('/units/:key', h((req) => {
   return {
     unit,
     events: q('SELECT e.*, u.full_name AS user_name FROM unit_events e LEFT JOIN users u ON u.id = e.user_id WHERE e.unit_id = ? ORDER BY e.at', unit.id),
+    processSteps: q('SELECT s.*, u.full_name AS user_name FROM unit_process_steps s LEFT JOIN users u ON u.id = s.completed_by WHERE s.unit_id = ? ORDER BY s.completed_at', unit.id),
     qc: q('SELECT * FROM qc_checks WHERE unit_id = ? ORDER BY at DESC', unit.id),
     tickets: q('SELECT * FROM tickets WHERE unit_id = ? ORDER BY created_at DESC', unit.id),
     address: unit.addressId ? one('SELECT * FROM contact_addresses WHERE id = ?', unit.addressId) : null,

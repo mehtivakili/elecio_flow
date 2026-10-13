@@ -1,7 +1,7 @@
 import { useNavigate, Link } from 'react-router-dom';
 import {
-  Wallet, ShoppingCart, Flame, Factory, Package, Cpu, LifeBuoy, HandCoins, LayoutDashboard, BellRing, CalendarClock,
-  Activity, Phone, Truck, Wrench, ChevronLeft, Users, FileText,
+  Wallet, ShoppingCart, Flame, Factory, Cpu, HandCoins, LayoutDashboard, BellRing, CalendarClock,
+  Activity, Phone, Truck, Wrench, ChevronLeft, Users, Route,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useApi } from '../lib/hooks';
@@ -12,6 +12,7 @@ import { AlertRow } from '../components/Shell';
 import { Timeline } from '../components/flow';
 import { UNIT_STATUS } from '@shared/defaults';
 import { compactMoney, dateLong, dateTime, isolateCodes, num, relative } from '../lib/format';
+import { PRODUCT_FLOW } from './ProductFlowPage';
 
 const ENTITY_LINK: Record<string, (id: string) => string> = {
   contact: (id) => `/crm/contacts/${id}`,
@@ -36,18 +37,7 @@ export default function DashboardPage() {
   const hour = new Date().getHours();
   const greet = hour < 12 ? 'صبح بخیر' : hour < 17 ? 'روز بخیر' : 'عصر بخیر';
 
-  /* The whole business as one flow — the idea behind the product's name. */
   const unitsBy = Object.fromEntries(data.unitsByStatus.map((u: any) => [u.status, u.n]));
-  const flow = [
-    { label: 'سرنخ فعال', value: data.funnel.filter((f: any) => !f.final).reduce((s: number, f: any) => s + f.count, 0), icon: Users, to: '/crm/pipeline', color: '#9DB4C0' },
-    { label: 'پیش‌فاکتور باز', value: k.quotes, icon: FileText, to: '/sales/orders?stage=quote', color: '#C2DFE3' },
-    { label: 'سفارش در جریان', value: k.openOrders - k.quotes, icon: ShoppingCart, to: '/sales/orders', color: '#B48CF2' },
-    { label: 'در حال تولید', value: k.wip, icon: Factory, to: '/production/work-orders', color: '#779BE7' },
-    { label: 'آماده در انبار', value: k.readyStock + (unitsBy.reserved ?? 0), icon: Package, to: '/units?status=in_stock', color: '#5EC8E5' },
-    { label: 'در مسیر / نصب', value: unitsBy.shipped ?? 0, icon: Truck, to: '/units?status=shipped', color: '#F5B85A' },
-    { label: 'نزد مشتری', value: k.installedBase, icon: Cpu, to: '/units?status=installed', color: '#0FD69D' },
-    { label: 'تیکت باز', value: k.openTickets, icon: LifeBuoy, to: '/service/tickets', color: '#FF499E' },
-  ];
 
   return (
     <div className="space-y-6">
@@ -57,19 +47,24 @@ export default function DashboardPage() {
         subtitle={`${dateLong(Date.now())} — تصویر یکپارچه فروش، تأمین، تولید و خدمات`}
       />
 
-      <section className="glass overflow-x-auto p-4">
-        <div className="flex min-w-[880px] items-stretch">
-          {flow.map((f, i) => (
-            <div key={f.label} className="flex flex-1 items-center">
-              <button onClick={() => navigate(f.to)} className="group flex w-full min-w-[92px] flex-col items-center gap-2 rounded-xl px-2 py-2 text-center transition hover:bg-ink/[0.05]">
-                <span className="flex h-11 w-11 items-center justify-center rounded-2xl transition group-hover:scale-105" style={{ background: `${f.color}26`, color: f.color }}>
-                  <f.icon size={20} />
-                </span>
-                <span className="num text-xl font-bold text-ink">{num(f.value)}</span>
-                <span className="text-[11px] text-mist">{f.label}</span>
-              </button>
-              {i < flow.length - 1 && <ChevronLeft size={18} className="mx-1 shrink-0 text-slate" />}
-            </div>
+      <section className="glass overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line/60 px-4 py-3">
+          <div className="flex items-center gap-2.5">
+            <Route size={18} className="text-amber" />
+            <div><h2 className="text-sm font-semibold text-ink">فرآیند تأمین محصول</h2><p className="text-[11px] text-mist">از سفارش تا تحویل و پشتیبانی</p></div>
+          </div>
+          <Link to="/operations/product-flow" className="flex items-center gap-1 text-xs font-medium text-iris hover:text-ink">مشاهده جزئیات و چک‌لیست‌ها <ChevronLeft size={14} /></Link>
+        </div>
+        <div className="grid grid-cols-2 gap-px bg-line/40 md:grid-cols-4 xl:grid-cols-8">
+          {PRODUCT_FLOW.map((step) => (
+            <Link key={step.number} to={step.to} className="group relative min-h-[128px] bg-deep/65 p-3 transition hover:bg-ink/[0.06]">
+              <div className="flex items-center justify-between">
+                <span className="num flex h-7 w-7 items-center justify-center rounded-xl text-xs font-extrabold text-night" style={{ background: step.color }}>{step.number}</span>
+                <step.icon size={17} style={{ color: step.color }} />
+              </div>
+              <h3 className="mt-3 text-xs font-semibold leading-5 text-ink">{step.title}</h3>
+              <p className="mt-1 text-[10px] leading-5 text-mist">{step.owner}</p>
+            </Link>
           ))}
         </div>
       </section>
