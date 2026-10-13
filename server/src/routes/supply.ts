@@ -122,6 +122,40 @@ inventoryRouter.get('/stock', h((req) => q(
    WHERE s.org_id = ? AND (s.qty != 0 OR s.reserved != 0) ORDER BY w.created_at, i.name`, req.user.orgId,
 )));
 
+/** Set an absolute counted quantity while keeping the difference in the stock ledger. */
+inventoryRouter.post('/stock/adjust', h((req) => {
+  const b = req.body ?? {};
+  const item = mustFind('items', b.itemId, req.user.orgId, 'کالا');
+  const warehouse = mustFind('warehouses', b.warehouseId, req.user.orgId, 'انبار');
+  const countedQty = Number(b.countedQty);
+  const note = String(b.note ?? '').trim();
+  if (!Number.isFinite(countedQty) || countedQty < 0) throw new HttpError(400, 'موجودی شمارش‌شده باید صفر یا بیشتر باشد');
+  if (!note) throw new HttpError(400, 'دلیل اصلاح موجودی را وارد کنید');
+
+  return tx(() => {
+    const stock = one(
+      'SELECT qty, reserved FROM stock WHERE org_id = ? AND item_id = ? AND warehouse_id = ?',
+      req.user.orgId, item.id, warehouse.id,
+    ) ?? { qty: 0, reserved: 0 };
+    if (countedQty < stock.reserved) {
+      throw new HttpError(409, `موجودی شمارش‌شده نمی‌تواند از مقدار رزروشده (${stock.reserved} ${item.unit}) کمتر باشد`);
+    }
+    const difference = countedQty - stock.qty;
+    if (difference === 0) throw new HttpError(400, 'مقدار جدید با موجودی فعلی برابر است');
+    const ledgerNote = `اصلاح شمارش از ${stock.qty} به ${countedQty} ${item.unit} — ${note}`;
+    const id = moveStock(req.user, {
+      itemId: item.id,
+      kind: 'adjust',
+      qty: Math.abs(difference),
+      fromWh: difference < 0 ? warehouse.id : null,
+      toWh: difference > 0 ? warehouse.id : null,
+      note: ledgerNote,
+    });
+    logActivity(req.user, 'item', item.id, 'adjust', `${item.name} در ${warehouse.name}: ${stock.qty} ← ${countedQty} ${item.unit}`);
+    return { id, previousQty: stock.qty, countedQty, difference };
+  });
+}));
+
 inventoryRouter.get('/moves', h((req) => q(
   `SELECT m.*, i.name AS item_name, i.sku, i.unit, fw.name AS from_name, tw.name AS to_name, u.full_name AS user_name
    FROM stock_moves m JOIN items i ON i.id = m.item_id

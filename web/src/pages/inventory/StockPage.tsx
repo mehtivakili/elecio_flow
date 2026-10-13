@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeftRight, Plus, Warehouse, Pencil } from 'lucide-react';
+import { ArrowLeftRight, Plus, Warehouse, Pencil, ClipboardCheck } from 'lucide-react';
 import clsx from 'clsx';
 import { MOVE_KINDS } from '@shared/defaults';
 import { post, put } from '../../lib/api';
@@ -18,6 +18,7 @@ export default function StockPage() {
   const [wh, setWh] = useState('');
   const [search, setSearch] = useState('');
   const [moving, setMoving] = useState(false);
+  const [adjusting, setAdjusting] = useState<any>(null);
   const [editingWh, setEditingWh] = useState<any>(null);
   const { data: stock = [], isLoading } = useApi<any[]>('/stock');
   const { data: moves = [] } = useApi<any[]>(tab === 'moves' ? '/moves' : null);
@@ -42,7 +43,7 @@ export default function StockPage() {
       {tab === 'levels' && (isLoading ? <Spinner /> : levels.length === 0 ? <Card><Empty title="موجودی ثبت نشده" /></Card> : (
         <Card pad={false} bodyClass="overflow-x-auto">
           <table className="tbl">
-            <thead><tr><th>کالا</th><th>انبار</th><th>موجودی</th><th>رزرو</th><th>آزاد</th><th>ارزش</th></tr></thead>
+            <thead><tr><th>کالا</th><th>انبار</th><th>موجودی</th><th>رزرو</th><th>آزاد</th><th>ارزش</th><th>عملیات</th></tr></thead>
             <tbody>{levels.map((s) => (
               <tr key={`${s.itemId}-${s.warehouseId}`}>
                 <td><Link to={`/inventory/items/${s.itemId}`} className="text-ink hover:text-iris">{s.name}</Link><div className="ltr text-right text-[11px] text-mist">{s.sku}</div></td>
@@ -51,6 +52,7 @@ export default function StockPage() {
                 <td className="num text-amber">{s.reserved ? num(s.reserved) : '—'}</td>
                 <td className={clsx('num font-semibold', s.qty - s.reserved <= s.reorderPoint && s.reorderPoint > 0 ? 'text-rose' : 'text-ink')}>{num(s.qty - s.reserved)}</td>
                 <td className="num text-xs text-mist">{money(s.qty * s.cost)}</td>
+                <td><Button size="sm" variant="ghost" icon={ClipboardCheck} onClick={() => setAdjusting(s)}>اصلاح شمارش</Button></td>
               </tr>
             ))}</tbody>
           </table>
@@ -108,9 +110,41 @@ export default function StockPage() {
       )}
 
       <MoveModal open={moving} onClose={() => setMoving(false)} />
+      <StockAdjustmentModal stock={adjusting} onClose={() => setAdjusting(null)} />
       <WarehouseModal wh={editingWh} onClose={() => setEditingWh(null)} />
     </div>
   );
+}
+
+function StockAdjustmentModal({ stock, onClose }: { stock: any | null; onClose: () => void }) {
+  const [countedQty, setCountedQty] = useState<number | ''>('');
+  const [note, setNote] = useState('');
+  useEffect(() => {
+    if (stock) { setCountedQty(Number(stock.qty)); setNote(''); }
+  }, [stock]);
+  const difference = stock && countedQty !== '' ? Number(countedQty) - Number(stock.qty) : 0;
+  const invalidReserved = !!stock && countedQty !== '' && Number(countedQty) < Number(stock.reserved ?? 0);
+  const save = useAction(
+    () => post('/stock/adjust', { itemId: stock.itemId, warehouseId: stock.warehouseId, countedQty: Number(countedQty), note: note.trim() }),
+    { success: (result: any) => `موجودی اصلاح شد (${result.difference > 0 ? '+' : ''}${num(result.difference)})`, onSuccess: onClose },
+  );
+  return <Modal open={!!stock} onClose={onClose} title="اصلاح موجودی پس از شمارش" subtitle={stock ? `${stock.name} · ${stock.warehouseName}` : undefined} icon={ClipboardCheck} size="sm"
+    footer={<><Button variant="ghost" onClick={onClose}>انصراف</Button><Button variant="primary" loading={save.isPending} disabled={countedQty === '' || Number(countedQty) < 0 || invalidReserved || difference === 0 || !note.trim()} onClick={() => save.mutate(undefined)}>ثبت اصلاح موجودی</Button></>}>
+    {stock && <div className="space-y-4">
+      <div className="grid grid-cols-3 gap-2">
+        <div className="rounded-xl bg-ink/[0.04] p-3"><div className="text-[10px] text-mist">موجودی فعلی</div><div className="num mt-1 font-bold text-ink">{num(stock.qty)}</div></div>
+        <div className="rounded-xl bg-amber/[0.07] p-3"><div className="text-[10px] text-mist">رزروشده</div><div className="num mt-1 font-bold text-amber">{num(stock.reserved ?? 0)}</div></div>
+        <div className="rounded-xl bg-iris/[0.07] p-3"><div className="text-[10px] text-mist">اختلاف</div><div className={clsx('num mt-1 font-bold', difference > 0 ? 'text-mint' : difference < 0 ? 'text-rose' : 'text-mist')}>{difference > 0 ? '+' : ''}{num(difference)}</div></div>
+      </div>
+      <Field label={`تعداد واقعی شمارش‌شده (${stock.unit})`} hint="عدد نهایی روی قفسه را وارد کنید؛ سیستم اختلاف را محاسبه می‌کند.">
+        <Input autoFocus type="number" min={0} step="any" value={countedQty} onChange={(e) => setCountedQty(e.target.value === '' ? '' : Number(e.target.value))} />
+      </Field>
+      {invalidReserved && <p className="rounded-xl bg-rose/10 px-3 py-2 text-xs leading-6 text-rose">این مقدار از {num(stock.reserved)} واحد رزروشده کمتر است. ابتدا رزرو سفارش‌ها را بررسی یا آزاد کنید.</p>}
+      <Field label="دلیل اصلاح" hint="این توضیح در دفتر تراکنش‌های انبار ثبت می‌شود.">
+        <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="مثلاً اختلاف شمارش دوره‌ای، خرابی یا ضایعات" />
+      </Field>
+    </div>}
+  </Modal>;
 }
 
 function MoveModal({ open, onClose }: { open: boolean; onClose: () => void }) {
