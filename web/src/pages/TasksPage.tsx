@@ -5,7 +5,8 @@ import clsx from 'clsx';
 import { del, post, put } from '../lib/api';
 import { useAction, useApi } from '../lib/hooks';
 import { useSession } from '../lib/session';
-import { Button, Card, Empty, Field, Input, Modal, PageHeader, Select, Spinner, Tabs, Textarea } from '../components/ui';
+import { Button, Card, Empty, Field, Input, Modal, PageHeader, Select, SelectDot, Spinner, Tabs, Textarea } from '../components/ui';
+import { SelectButton, SelectionBar, useSelection } from '../components/selection';
 import { DateInput } from '../components/inputs';
 import { PriorityPill, UserPicker } from '../components/domain';
 import { relative } from '../lib/format';
@@ -21,6 +22,7 @@ export default function TasksPage() {
   const start = useAction((t: any) => put(`/tasks/${t.id}`, { status: 'doing' }));
   const remove = useAction((id: string) => del(`/tasks/${id}`), { success: 'کار حذف شد' });
   const list = useMemo(() => data.filter((t) => scope === 'all' || t.assigneeId === me.id), [data, scope, me.id]);
+  const sel = useSelection(list.map((t) => t.id));
   const cols = [
     { key: 'todo', label: 'برای انجام' }, { key: 'doing', label: 'در حال انجام' }, { key: 'done', label: 'انجام‌شده' },
   ];
@@ -31,14 +33,22 @@ export default function TasksPage() {
         actions={<>
           <Tabs value={scope} onChange={setScope} tabs={[{ key: 'mine', label: 'کارهای من' }, { key: 'all', label: 'همه تیم' }]} />
         </>}
-        fab={{ label: 'کار جدید', icon: Plus, onClick: () => setAdding(true) }} />
+        aside={<SelectButton sel={sel} />}
+        fab={sel.active ? undefined : { label: 'کار جدید', icon: Plus, onClick: () => setAdding(true) }} />
       {isLoading ? <Spinner /> : list.length === 0 ? <Card><Empty icon={ListChecks} title="کاری ثبت نشده" /></Card> : (
         <div className="grid gap-5 lg:grid-cols-3">
           {cols.map((c) => (
             <Card key={c.key} title={c.label} pad={false} bodyClass="space-y-2 p-3">
               {list.filter((t) => t.status === c.key).map((t) => (
-                <div key={t.id} className="group flex items-start gap-3 rounded-xl bg-deep/60 p-3">
-                  <button onClick={() => toggle.mutate(t)} className="-m-1.5 p-1.5 text-mist hover:text-mint" aria-label="تغییر وضعیت">
+                <div
+                  key={t.id}
+                  role={sel.active ? 'checkbox' : undefined}
+                  aria-checked={sel.active ? sel.has(t.id) : undefined}
+                  onClick={sel.active ? () => sel.toggle(t.id) : undefined}
+                  className={clsx('group flex items-start gap-3 rounded-xl border border-transparent bg-deep/60 p-3', sel.active && 'cursor-pointer [&_a]:pointer-events-none [&_button]:pointer-events-none', sel.has(t.id) && 'list-card-selected')}
+                >
+                  {sel.active && <SelectDot checked={sel.has(t.id)} />}
+                  <button onClick={() => toggle.mutate(t)} className={clsx('-m-1.5 p-1.5 text-mist hover:text-mint', sel.active && 'hidden')} aria-label="تغییر وضعیت">
                     {t.status === 'done' ? <CheckCircle2 size={18} className="text-mint" /> : <Circle size={18} />}
                   </button>
                   <div className="min-w-0 flex-1">
@@ -62,6 +72,7 @@ export default function TasksPage() {
         </div>
       )}
       <TaskModal open={adding} onClose={() => setAdding(false)} />
+      <SelectionBar sel={sel} path="/tasks/bulk-delete" noun="کار" />
     </div>
   );
 }

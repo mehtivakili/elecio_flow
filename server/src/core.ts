@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response, RequestHandler } from 'express';
 import jwt from 'jsonwebtoken';
-import { one, run, uid, getDb } from './db.ts';
+import { one, run, tx, uid, getDb } from './db.ts';
 import {
   ELECIO_DEFAULTS, canWrite, type Module, type Role, type StageDef, type WorkspaceSettings,
 } from '../../shared/defaults.ts';
@@ -161,3 +161,49 @@ export function mustFind(table: string, id: string, orgId: string, label = 'رک
 
 export const DAY = 86_400_000;
 export const HOUR = 3_600_000;
+
+/* ───────────── Bulk delete ───────────── */
+
+export interface BulkDeleteResult { deleted: number; blocked: { id: string; name: string; reason: string }[] }
+
+/**
+ * Deletes the selected records of one table in a single transaction. Every row is
+ * re-read inside the caller's org, then `check` decides whether removing it would
+ * break something (linked orders, stock history…). Rows that fail the check are
+ * left untouched and reported back with the reason; the rest go through `remove`
+ * and are written to the activity log.
+ */
+export function bulkDelete(
+  user: AuthUser,
+  rawIds: unknown,
+  opts: {
+    table: string;
+    entity: string;
+    noun: string;
+    label: (row: any) => string;
+    check?: (row: any) => string | null;
+    remove: (row: any) => void;
+  },
+): BulkDeleteResult {
+  if (!Array.isArray(rawIds) || rawIds.length === 0) throw new HttpError(400, 'هیچ موردی انتخاب نشده است');
+  if (rawIds.length > 500) throw new HttpError(400, 'در هر بار حداکثر ۵۰۰ مورد قابل حذف است');
+  const ids = [...new Set(rawIds.map(String))];
+  return tx(() => {
+    const result: BulkDeleteResult = { deleted: 0, blocked: [] };
+    for (const id of ids) {
+      const row = one(`SELECT * FROM ${opts.table} WHERE id = ? AND org_id = ?`, id, user.orgId);
+      if (!row) continue;
+      const reason = opts.check?.(row) ?? null;
+      if (reason) { result.blocked.push({ id, name: opts.label(row), reason }); continue; }
+      opts.remove(row);
+      logActivity(user, opts.entity, id, 'delete', `حذف ${opts.noun} ${opts.label(row)}`);
+      result.deleted++;
+    }
+    return result;
+  });
+}
+
+/** Clears task links that pointed at a record which no longer exists. */
+export function unlinkTasks(refType: string, refId: string) {
+  run('UPDATE tasks SET ref_type = NULL, ref_id = NULL WHERE ref_type = ? AND ref_id = ?', refType, refId);
+}

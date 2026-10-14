@@ -6,6 +6,7 @@ import { useApi } from '../../lib/hooks';
 import { useSession } from '../../lib/session';
 import { Card, Empty, ListCard, PageHeader, Pill, SearchBox, Spinner, Stat, Tabs } from '../../components/ui';
 import { ItemFormModal } from '../../components/items';
+import { SelectAllCell, SelectButton, SelectCell, SelectionBar, useSelection } from '../../components/selection';
 import { compactMoney, money, num } from '../../lib/format';
 import { matchesSearch } from '@shared/search';
 
@@ -20,12 +21,14 @@ export default function ItemsPage() {
   const list = useMemo(() => data.filter((i) =>
     (kind === 'all' || (kind === 'reorder' ? i.needsReorder : i.kind === kind))
     && matchesSearch(`${i.name} ${i.sku} ${i.category}`, search)), [data, kind, search]);
+  const sel = useSelection(list.map((i) => i.id));
   const stockValue = data.reduce((s, i) => s + i.onHand * i.cost, 0);
 
   return (
     <div>
       <PageHeader icon={Boxes} title="کالاها و قطعات" subtitle="محصولات نهایی، قطعات تولید و خدمات — با موجودی آزاد، رزرو و در راه"
-        fab={{ label: 'تعریف کالا', icon: Plus, onClick: () => setEditing({}) }} />
+        aside={<SelectButton sel={sel} />}
+        fab={sel.active ? undefined : { label: 'تعریف کالا', icon: Plus, onClick: () => setEditing({}) }} />
       <div className="stat-rail mb-5 grid grid-cols-2 gap-4 md:grid-cols-4">
         <Stat label="ارزش موجودی" value={compactMoney(stockValue)} hint={settings.company.currency} tone="mint" />
         <Stat label="محصولات نهایی" value={num(data.filter((i) => i.kind === 'product').length)} tone="iris" />
@@ -43,7 +46,8 @@ export default function ItemsPage() {
       {isLoading ? <Spinner /> : list.length === 0 ? <Card><Empty icon={Boxes} title="کالایی یافت نشد" /></Card> : (<>
         <div className="space-y-2 md:hidden">
           {list.map((i) => (
-            <ListCard key={i.id} to={`/inventory/items/${i.id}`} accent={i.needsReorder ? '#FF499E' : undefined} className={clsx(!i.active && 'opacity-50')}>
+            <ListCard key={i.id} to={`/inventory/items/${i.id}`} accent={i.needsReorder ? '#FF499E' : undefined} className={clsx(!i.active && 'opacity-50')}
+              selecting={sel.active} selected={sel.has(i.id)} onSelect={() => sel.toggle(i.id)} onLongPress={() => sel.start(i.id)}>
               <div className="flex items-center justify-between gap-2">
                 <span className="flex min-w-0 items-center gap-1.5">
                   <span className="truncate text-[14.5px] font-bold text-ink">{i.name}</span>
@@ -69,9 +73,10 @@ export default function ItemsPage() {
         </div>
         <Card pad={false} bodyClass="overflow-x-auto" className="hidden md:block">
           <table className="tbl">
-            <thead><tr><th>کالا</th><th>نوع</th><th>موجودی</th><th>رزرو</th><th>آزاد</th><th>در راه</th><th>نقطه سفارش</th><th>بهای تمام‌شده</th><th>قیمت فروش</th></tr></thead>
+            <thead><tr><SelectAllCell sel={sel} /><th>کالا</th><th>نوع</th><th>موجودی</th><th>رزرو</th><th>آزاد</th><th>در راه</th><th>نقطه سفارش</th><th>بهای تمام‌شده</th><th>قیمت فروش</th></tr></thead>
             <tbody>{list.map((i) => (
-              <tr key={i.id} className={clsx('cursor-pointer', !i.active && 'opacity-50')} onClick={() => navigate(`/inventory/items/${i.id}`)}>
+              <tr key={i.id} className={clsx('cursor-pointer', !i.active && 'opacity-50', sel.has(i.id) && 'row-selected')} onClick={() => (sel.active ? sel.toggle(i.id) : navigate(`/inventory/items/${i.id}`))}>
+                <SelectCell sel={sel} id={i.id} />
                 <td>
                   <div className="flex items-center gap-2 text-ink">{i.name}{i.serialized ? <Pill color="#779BE7">سریالی</Pill> : null}{i.bomCount ? <Layers size={13} className="text-mist" /> : null}</div>
                   <div className="ltr text-right text-[11px] text-mist">{i.sku}</div>
@@ -94,6 +99,7 @@ export default function ItemsPage() {
         </Card>
       </>)}
       <ItemFormModal item={editing} onClose={() => setEditing(null)} onSaved={(id) => navigate(`/inventory/items/${id}`)} />
+      <SelectionBar sel={sel} path="/items/bulk-delete" noun="کالا" />
     </div>
   );
 }

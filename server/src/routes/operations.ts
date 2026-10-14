@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { insert, one, q, run, tx, uid, update, val } from '../db.ts';
 import {
-  HttpError, getSettings, guard, h, logActivity, mustFind, nextNumber, orderStagesFor,
+  HttpError, bulkDelete, getSettings, guard, h, logActivity, mustFind, nextNumber, orderStagesFor, unlinkTasks,
 } from '../core.ts';
 import {
   advanceOrder, advanceWorkOrder, allocateOrder, cancelOrder, createTicket, createWorkOrder, createWorkOrdersForOrder,
@@ -135,6 +135,34 @@ ordersRouter.post('/orders/:id/work-orders', h((req) => {
   if (!created.length) throw new HttpError(409, 'کسری‌ای برای تولید وجود ندارد');
   return { created };
 }));
+/**
+ * Only quotes and cancelled orders can be deleted, and only while nothing real hangs
+ * off them: no money received, no shipment, no serials, no stock movement, no
+ * production. An order in progress must be cancelled first (which releases stock).
+ */
+ordersRouter.post('/orders/bulk-delete', h((req) => bulkDelete(req.user, req.body?.ids, {
+  table: 'orders', entity: 'order', noun: 'سفارش',
+  label: (o) => `${o.number} — ${one('SELECT name FROM contacts WHERE id = ?', o.contactId)?.name ?? ''}`,
+  check: (o) => {
+    if (o.status === 'done') return 'سفارش تحویل‌شده است';
+    if (o.status === 'open' && o.stage !== 'quote') return 'سفارش در جریان است؛ ابتدا آن را لغو کنید';
+    if (val<number>('SELECT COUNT(*) FROM payments WHERE order_id = ?', o.id)) return 'دریافتی ثبت‌شده دارد';
+    if (val<number>('SELECT COUNT(*) FROM shipments WHERE order_id = ?', o.id)) return 'محموله ارسالی دارد';
+    if (val<number>('SELECT COUNT(*) FROM units WHERE order_id = ?', o.id)) return 'شماره‌سریال به آن تخصیص یافته';
+    if (val<number>('SELECT COUNT(*) FROM order_lines WHERE order_id = ? AND allocated > 0', o.id)) return 'کالای رزروشده دارد؛ ابتدا لغو کنید';
+    if (val<number>("SELECT COUNT(*) FROM stock_moves WHERE ref_type = 'order' AND ref_id = ?", o.id)) return 'در دفتر انبار گردش دارد';
+    if (val<number>('SELECT COUNT(*) FROM work_orders WHERE order_id = ?', o.id)) return 'دستور تولید دارد';
+    return null;
+  },
+  remove: (o) => {
+    run("DELETE FROM stage_log WHERE entity_type = 'order' AND entity_id = ?", o.id);
+    run('UPDATE tickets SET order_id = NULL WHERE order_id = ?', o.id);
+    run("UPDATE expenses SET ref_type = NULL, ref_id = NULL WHERE ref_type = 'order' AND ref_id = ?", o.id);
+    unlinkTasks('order', o.id);
+    run('DELETE FROM orders WHERE id = ?', o.id); // lines cascade
+  },
+})));
+
 ordersRouter.post('/units/:id/release', h((req) => releaseUnit(req.user, req.params.id)));
 
 ordersRouter.post('/orders/:id/payments', h((req) => {
@@ -319,6 +347,22 @@ serviceRouter.put('/tickets/:id', h((req) => {
   update('tickets', t.id, req.user.orgId, { ...req.body, updatedAt: Date.now() },
     ['assignee_id', 'priority', 'type', 'scheduled_at', 'cost', 'satisfaction', 'subject', 'description', 'updated_at']);
 }));
+
+serviceRouter.post('/tickets/bulk-delete', h((req) => bulkDelete(req.user, req.body?.ids, {
+  table: 'tickets', entity: 'ticket', noun: 'تیکت',
+  label: (t) => `${t.number} — ${t.subject}`,
+  check: (t) => {
+    const open = !['resolved', 'closed'].includes(t.status);
+    if (open && t.unitId && one("SELECT 1 AS x FROM units WHERE id = ? AND status = 'in_repair'", t.unitId)) {
+      return 'دستگاه این تیکت در تعمیر است؛ ابتدا تیکت را حل‌شده کنید';
+    }
+    return null;
+  },
+  remove: (t) => {
+    unlinkTasks('ticket', t.id);
+    run('DELETE FROM tickets WHERE id = ?', t.id); // comments cascade
+  },
+})));
 
 serviceRouter.post('/tickets/:id/status', h((req) => setTicketStatus(req.user, req.params.id, req.body?.status, req.body?.resolution)));
 

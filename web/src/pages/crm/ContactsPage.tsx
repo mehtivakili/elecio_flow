@@ -8,6 +8,7 @@ import { useSession } from '../../lib/session';
 import { Avatar, Button, Card, Empty, Filters, ListCard, PageHeader, Pill, SearchBox, Select, Spinner, Stars } from '../../components/ui';
 import { LifecyclePill } from '../../components/domain';
 import { ContactFormModal, LogTouchModal, NextActionTag, PhoneLine } from '../../components/crm';
+import { SelectAllCell, SelectButton, SelectCell, SelectionBar, useSelection } from '../../components/selection';
 import { ScoreMeter } from '../../components/charts';
 import { num, relative } from '../../lib/format';
 
@@ -35,6 +36,7 @@ export default function ContactsPage() {
     () => (rawContacts ?? []).filter((c) => !untouched || (!c.lastContactAt && !['customer', 'lost'].includes(c.stage))),
     [rawContacts, untouched],
   );
+  const sel = useSelection(contacts.map((c) => c.id));
   const setFilter = (key: string, value: string) => {
     if (value) params.set(key, value); else params.delete(key);
     setParams(params, { replace: true });
@@ -62,8 +64,9 @@ export default function ContactsPage() {
         icon={Users}
         title="مخاطبین و مشتریان"
         subtitle={`${num(contacts.length)} مخاطب — سرنخ‌ها، مشتریان و نمایندگان`}
+        aside={<SelectButton sel={sel} onStart={() => setView('table')} />}
         actions={<Button variant="ghost" icon={Download} onClick={exportCsv} className="hidden md:inline-flex">خروجی CSV</Button>}
-        fab={{ label: 'سرنخ جدید', icon: UserPlus, onClick: () => setCreating(true) }}
+        fab={sel.active ? undefined : { label: 'سرنخ جدید', icon: UserPlus, onClick: () => setCreating(true) }}
       />
 
       <Card pad={false} bodyClass="p-0 md:p-4" className="mb-4 border-0 bg-transparent shadow-none backdrop-blur-none md:mb-5 md:border md:bg-ink/[0.045] md:shadow-glass md:backdrop-blur-md">
@@ -116,7 +119,8 @@ export default function ContactsPage() {
           const scoreColor = c.score >= settings.scoring.hotThreshold ? 'text-rose' : c.score >= settings.scoring.warmThreshold ? 'text-amber' : 'text-mist';
           const phone = c.phones?.[0]?.value;
           return (
-            <ListCard key={c.id} onClick={() => navigate(`/crm/contacts/${c.id}`)} accent={stage?.color}>
+            <ListCard key={c.id} onClick={() => navigate(`/crm/contacts/${c.id}`)} accent={stage?.color}
+              selecting={sel.active} selected={sel.has(c.id)} onSelect={() => sel.toggle(c.id)} onLongPress={() => sel.start(c.id)}>
               <div className="flex items-center gap-2.5">
                 <Avatar name={c.name} size={36} color={stage?.color} />
                 <div className="min-w-0 flex-1">
@@ -153,12 +157,14 @@ export default function ContactsPage() {
           <table className="tbl">
             <thead>
               <tr>
+                <SelectAllCell sel={sel} />
                 <th>نام</th><th>مرحله</th><th>امتیاز</th><th>اقدام پیشنهادی</th><th>تماس</th><th>موقعیت</th><th>منبع</th><th>آخرین ارتباط</th><th>کارشناس</th><th />
               </tr>
             </thead>
             <tbody>
               {contacts.map((c) => (
-                <tr key={c.id} className="cursor-pointer" onClick={() => navigate(`/crm/contacts/${c.id}`)}>
+                <tr key={c.id} className={clsx('cursor-pointer', sel.has(c.id) && 'row-selected')} onClick={() => (sel.active ? sel.toggle(c.id) : navigate(`/crm/contacts/${c.id}`))}>
+                  <SelectCell sel={sel} id={c.id} />
                   <td>
                     <div className="flex items-center gap-2">
                       {!!c.starred && <Star size={13} className="shrink-0 fill-amber text-amber" />}
@@ -222,6 +228,7 @@ export default function ContactsPage() {
 
       <ContactFormModal open={creating} onClose={() => setCreating(false)} onSaved={(id) => navigate(`/crm/contacts/${id}`)} />
       <LogTouchModal open={!!touch} onClose={() => setTouch(null)} contact={touch} />
+      <SelectionBar sel={sel} path="/contacts/bulk-delete" noun="مخاطب" />
     </div>
   );
 }

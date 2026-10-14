@@ -7,6 +7,7 @@ import { useSession } from '../../lib/session';
 import { Button, pickStage, StageSwitch, Card, Empty, Filters, ListCard, PageHeader, Progress, SearchBox, Select, Spinner, Stat, Tabs } from '../../components/ui';
 import { OrderStagePill, PriorityPill } from '../../components/domain';
 import { OrderFormModal } from '../../components/orders';
+import { SelectAllCell, SelectButton, SelectCell, SelectionBar, useSelection } from '../../components/selection';
 import { compactMoney, date, money, num, relative } from '../../lib/format';
 import { matchesSearch } from '@shared/search';
 
@@ -32,6 +33,7 @@ export default function OrdersPage() {
     (status === 'all' || o.status === status) && (!stage || o.stage === stage)
     && matchesSearch(`${o.number} ${o.contactName} ${o.summary}`, search)), [data, status, stage, search]);
   const open = data.filter((o) => o.status === 'open');
+  const sel = useSelection(orders.map((o) => o.id));
   const cur = settings.company.currency;
   const boardStages = settings.orderStages.filter((s) => !s.final);
   const boardCounts = boardStages.map((s) => ({ key: s.key, label: s.label, color: s.color, count: orders.filter((o) => o.stage === s.key && o.status === 'open').length }));
@@ -43,7 +45,8 @@ export default function OrdersPage() {
         icon={ShoppingCart}
         title="سفارش‌های فروش"
         subtitle="سفارش‌های دریافتی از مشتری؛ از پیش‌فاکتور تا تحویل و نصب"
-        fab={{ label: 'پیش‌فاکتور جدید', icon: FilePlus2, onClick: () => setCreating(null) }}
+        aside={<SelectButton sel={sel} onStart={() => setView('table')} />}
+        fab={sel.active ? undefined : { label: 'پیش‌فاکتور جدید', icon: FilePlus2, onClick: () => setCreating(null) }}
       />
       <div className="stat-rail mb-5 grid grid-cols-2 gap-4 md:grid-cols-4">
         <Stat label="پیش‌فاکتورهای باز" value={num(open.filter((o) => o.stage === 'quote').length)} hint={`${compactMoney(open.filter((o) => o.stage === 'quote').reduce((s, o) => s + o.total, 0))} ${cur}`} tone="sky" />
@@ -79,7 +82,8 @@ export default function OrdersPage() {
             const paidPct = o.total ? Math.round((o.paid / o.total) * 100) : 0;
             const urgent = ['high', 'urgent'].includes(o.priority);
             return (
-              <ListCard key={o.id} to={`/sales/orders/${o.id}`} accent={o.status === 'cancelled' ? '#FF499E' : stageDef?.color}>
+              <ListCard key={o.id} to={`/sales/orders/${o.id}`} accent={o.status === 'cancelled' ? '#FF499E' : stageDef?.color}
+                selecting={sel.active} selected={sel.has(o.id)} onSelect={() => sel.toggle(o.id)} onLongPress={() => sel.start(o.id)}>
                 <div className="flex items-center justify-between gap-2">
                   <span className="flex min-w-0 items-center gap-1.5">
                     {o.late && <AlertTriangle size={14} className="shrink-0 text-rose" />}
@@ -106,10 +110,11 @@ export default function OrdersPage() {
         </div>
         <Card pad={false} bodyClass="overflow-x-auto" className="hidden md:block">
           <table className="tbl">
-            <thead><tr><th>شماره</th><th>مشتری</th><th>اقلام</th><th>مرحله</th><th>پیشرفت</th><th>مبلغ</th><th>پرداخت</th><th>تحویل تعهدی</th><th>اولویت</th></tr></thead>
+            <thead><tr><SelectAllCell sel={sel} /><th>شماره</th><th>مشتری</th><th>اقلام</th><th>مرحله</th><th>پیشرفت</th><th>مبلغ</th><th>پرداخت</th><th>تحویل تعهدی</th><th>اولویت</th></tr></thead>
             <tbody>
               {orders.map((o) => (
-                <tr key={o.id} className="cursor-pointer" onClick={() => navigate(`/sales/orders/${o.id}`)}>
+                <tr key={o.id} className={clsx('cursor-pointer', sel.has(o.id) && 'row-selected')} onClick={() => (sel.active ? sel.toggle(o.id) : navigate(`/sales/orders/${o.id}`))}>
+                  <SelectCell sel={sel} id={o.id} />
                   <td className="ltr whitespace-nowrap text-right font-medium text-ink">{o.number}</td>
                   <td><div className="text-ink">{o.contactName}</div><div className="text-xs text-mist">{o.fulfillment === 'mto' ? 'تولید سفارشی' : 'از موجودی'}</div></td>
                   <td className="max-w-[240px] truncate text-xs text-frost" title={o.summary}>{o.summary}</td>
@@ -160,6 +165,7 @@ export default function OrdersPage() {
         </div>
       </>)}
       <OrderFormModal open={creating !== false} onClose={() => setCreating(false)} defaultContact={creating || null} onSaved={(id) => navigate(`/sales/orders/${id}`)} />
+      <SelectionBar sel={sel} path="/orders/bulk-delete" noun="سفارش" />
     </div>
   );
 }

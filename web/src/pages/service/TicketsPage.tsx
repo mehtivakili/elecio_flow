@@ -10,6 +10,7 @@ import { DateInput } from '../../components/inputs';
 import { ContactPicker, PriorityPill, TicketStatusPill, TicketTypePill, UnitPicker, UserPicker, WarrantyBadge } from '../../components/domain';
 import { date, num, relative } from '../../lib/format';
 import { matchesSearch } from '@shared/search';
+import { SelectAllCell, SelectButton, SelectCell, SelectionBar, useSelection } from '../../components/selection';
 
 export default function TicketsPage() {
   const { settings, users } = useSession();
@@ -35,12 +36,14 @@ export default function TicketsPage() {
     (tab === 'all' || (tab === 'open' ? isOpen(t) : !isOpen(t))) && (!type || t.type === type) && (!assignee || t.assigneeId === assignee)
     && matchesSearch(`${t.number} ${t.subject} ${t.contactName ?? ''} ${t.serial ?? ''}`, search)), [data, tab, type, assignee, search]);
   const open = data.filter(isOpen);
+  const sel = useSelection(list.map((t) => t.id));
   const rated = data.filter((t) => t.satisfaction);
 
   return (
     <div>
       <PageHeader icon={LifeBuoy} title="خدمات پس از فروش" subtitle="نصب، پشتیبانی، گارانتی و تعمیر — با SLA بر اساس اولویت"
-        fab={{ label: 'تیکت جدید', icon: Plus, onClick: () => setCreating({}) }} />
+        aside={<SelectButton sel={sel} />}
+        fab={sel.active ? undefined : { label: 'تیکت جدید', icon: Plus, onClick: () => setCreating({}) }} />
       <div className="stat-rail mb-5 grid grid-cols-2 gap-4 md:grid-cols-4">
         <Stat label="تیکت‌های باز" value={num(open.length)} tone="iris" />
         <Stat label="نقض SLA" value={num(open.filter((t) => t.breached).length)} tone="rose" icon={AlertOctagon} alert={open.some((t) => t.breached)} />
@@ -64,7 +67,8 @@ export default function TicketsPage() {
           {list.map((t) => {
             const breached = t.breached && isOpen(t);
             return (
-              <ListCard key={t.id} to={`/service/tickets/${t.id}`} accent={breached ? '#FF499E' : settings.ticketTypes.find((x) => x.key === t.type)?.color}>
+              <ListCard key={t.id} to={`/service/tickets/${t.id}`} accent={breached ? '#FF499E' : settings.ticketTypes.find((x) => x.key === t.type)?.color}
+                selecting={sel.active} selected={sel.has(t.id)} onSelect={() => sel.toggle(t.id)} onLongPress={() => sel.start(t.id)}>
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate text-[14.5px] font-bold text-ink">{t.subject}</span>
                   <TicketStatusPill status={t.status} />
@@ -85,9 +89,10 @@ export default function TicketsPage() {
         </div>
         <Card pad={false} bodyClass="overflow-x-auto" className="hidden md:block">
           <table className="tbl">
-            <thead><tr><th>شماره</th><th>موضوع</th><th>نوع</th><th>مشتری / سریال</th><th>وضعیت</th><th>اولویت</th><th>SLA</th><th>کارشناس</th></tr></thead>
+            <thead><tr><SelectAllCell sel={sel} /><th>شماره</th><th>موضوع</th><th>نوع</th><th>مشتری / سریال</th><th>وضعیت</th><th>اولویت</th><th>SLA</th><th>کارشناس</th></tr></thead>
             <tbody>{list.map((t) => (
-              <tr key={t.id} className="cursor-pointer" onClick={() => navigate(`/service/tickets/${t.id}`)}>
+              <tr key={t.id} className={clsx('cursor-pointer', sel.has(t.id) && 'row-selected')} onClick={() => (sel.active ? sel.toggle(t.id) : navigate(`/service/tickets/${t.id}`))}>
+                <SelectCell sel={sel} id={t.id} />
                 <td className="ltr whitespace-nowrap text-right text-xs font-semibold">{t.number}</td>
                 <td className="max-w-[260px]"><div className="truncate text-ink">{t.subject}</div>{t.scheduledAt && isOpen(t) && <div className="text-[11px] text-iris">نوبت: {date(t.scheduledAt)}</div>}</td>
                 <td><TicketTypePill type={t.type} /></td>
@@ -102,6 +107,7 @@ export default function TicketsPage() {
         </Card>
       </>)}
       <TicketFormModal init={creating} onClose={() => setCreating(null)} onSaved={(id) => navigate(`/service/tickets/${id}`)} />
+      <SelectionBar sel={sel} path="/tickets/bulk-delete" noun="تیکت" />
     </div>
   );
 }

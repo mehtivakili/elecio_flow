@@ -4,7 +4,8 @@ import { Building2, Plus, Pencil, Phone, Clock, Timer, Globe2 } from 'lucide-rea
 import clsx from 'clsx';
 import { post, put } from '../../lib/api';
 import { useAction, useApi } from '../../lib/hooks';
-import { Button, Card, Empty, Field, Input, Modal, PageHeader, Spinner, Stars, Textarea } from '../../components/ui';
+import { Button, Card, Empty, Field, Input, Modal, PageHeader, SelectDot, Spinner, Stars, Textarea } from '../../components/ui';
+import { SelectButton, SelectionBar, useSelection } from '../../components/selection';
 import { compactMoney, num } from '../../lib/format';
 
 /** Supplier scorecards: on-time delivery and average delay come from real purchase orders. */
@@ -13,20 +14,29 @@ export default function SuppliersPage() {
   const [params] = useSearchParams();
   const focus = params.get('focus');
   const [editing, setEditing] = useState<any | null>(null);
+  const sel = useSelection(data.map((s) => s.id));
 
   return (
     <div>
       <PageHeader icon={Building2} title="تأمین‌کنندگان" subtitle="کارنامه تحویل به‌موقع، تأخیر میانگین و حجم خرید هر تأمین‌کننده"
-        fab={{ label: 'تأمین‌کننده جدید', icon: Plus, onClick: () => setEditing({}) }} />
+        aside={<SelectButton sel={sel} />}
+        fab={sel.active ? undefined : { label: 'تأمین‌کننده جدید', icon: Plus, onClick: () => setEditing({}) }} />
       {isLoading ? <Spinner /> : data.length === 0 ? <Card><Empty icon={Building2} title="تأمین‌کننده‌ای ثبت نشده" /></Card> : (
         <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
           {data.map((s) => {
             const rate = s.onTimeRate;
             const tone = rate === null ? 'text-mist' : rate >= 85 ? 'text-mint' : rate >= 60 ? 'text-amber' : 'text-rose';
             return (
-              <div key={s.id} className={clsx('glass p-4 md:p-5', focus === s.id && 'border-iris/60 shadow-glow')}>
+              <div
+                key={s.id}
+                role={sel.active ? 'checkbox' : undefined}
+                aria-checked={sel.active ? sel.has(s.id) : undefined}
+                onClick={sel.active ? () => sel.toggle(s.id) : undefined}
+                className={clsx('glass p-4 md:p-5', focus === s.id && 'border-iris/60 shadow-glow', sel.active && 'cursor-pointer [&_a]:pointer-events-none [&_button]:pointer-events-none', sel.has(s.id) && 'list-card-selected')}
+              >
                 <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
+                  {sel.active && <SelectDot checked={sel.has(s.id)} />}
+                  <div className="min-w-0 flex-1">
                     <div className="truncate font-semibold text-ink">{s.name}</div>
                     <div className="mt-0.5 flex items-center gap-1 text-xs text-mist"><Globe2 size={12} />{s.country}، {s.city}</div>
                   </div>
@@ -50,6 +60,7 @@ export default function SuppliersPage() {
         </div>
       )}
       <SupplierModal supplier={editing} onClose={() => setEditing(null)} />
+      <SelectionBar sel={sel} path="/suppliers/bulk-delete" noun="تأمین‌کننده" />
     </div>
   );
 }

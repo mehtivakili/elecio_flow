@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { insert, one, q, run, tx, uid, update, val } from '../db.ts';
-import { DAY, HttpError, getSettings, guard, h, logActivity, mustFind, nextNumber } from '../core.ts';
+import { DAY, HttpError, bulkDelete, getSettings, guard, h, logActivity, mustFind, nextNumber, unlinkTasks } from '../core.ts';
 import { moveStock } from '../services/inventory.ts';
 
 /* ═════════════════════════ Items, BOM, warehouses, stock (WMS) ═════════════════════════ */
@@ -87,6 +87,28 @@ inventoryRouter.put('/items/:id', h((req) => {
   update('items', item.id, req.user.orgId, b, ITEM_COLUMNS);
   return { id: item.id };
 }));
+
+/**
+ * An item can be deleted only while it has no history: never sold, bought, built,
+ * serialised, used in a BOM or moved in the stock ledger, and nothing on the shelf.
+ * Anything with history should be deactivated instead, so past documents stay intact.
+ */
+inventoryRouter.post('/items/bulk-delete', h((req) => bulkDelete(req.user, req.body?.ids, {
+  table: 'items', entity: 'item', noun: 'کالا',
+  label: (i) => `${i.name} (${i.sku})`,
+  check: (i) => {
+    const used = (sql: string) => val<number>(sql, i.id) > 0;
+    if (used('SELECT COUNT(*) FROM order_lines WHERE item_id = ?')) return 'در سفارش فروش استفاده شده؛ غیرفعالش کنید';
+    if (used('SELECT COUNT(*) FROM po_lines WHERE item_id = ?')) return 'در سفارش خرید استفاده شده؛ غیرفعالش کنید';
+    if (used('SELECT COUNT(*) FROM work_orders WHERE item_id = ?')) return 'دستور تولید دارد؛ غیرفعالش کنید';
+    if (used('SELECT COUNT(*) FROM units WHERE item_id = ?')) return 'دستگاه سریال‌دار دارد؛ غیرفعالش کنید';
+    if (used('SELECT COUNT(*) FROM bom_lines WHERE component_id = ?')) return 'در BOM محصول دیگری به کار رفته';
+    if (used('SELECT COUNT(*) FROM stock_moves WHERE item_id = ?')) return 'در دفتر انبار گردش دارد؛ غیرفعالش کنید';
+    if (used('SELECT COUNT(*) FROM stock WHERE item_id = ? AND (qty <> 0 OR reserved <> 0)')) return 'موجودی انبار دارد';
+    return null;
+  },
+  remove: (i) => run('DELETE FROM items WHERE id = ?', i.id), // its own BOM lines and empty stock rows cascade
+})));
 
 inventoryRouter.put('/items/:id/bom', h((req) => {
   const item = mustFind('items', req.params.id, req.user.orgId, 'کالا');
@@ -283,6 +305,33 @@ supplyRouter.post('/purchase-orders', h((req) => {
 }));
 
 const PO_FLOW = ['draft', 'sent', 'confirmed', 'in_transit', 'partial', 'received'];
+
+supplyRouter.post('/suppliers/bulk-delete', h((req) => bulkDelete(req.user, req.body?.ids, {
+  table: 'suppliers', entity: 'supplier', noun: 'تأمین‌کننده',
+  label: (s) => s.name,
+  check: (s) => (val<number>('SELECT COUNT(*) FROM purchase_orders WHERE supplier_id = ?', s.id) ? 'سفارش خرید ثبت‌شده دارد' : null),
+  remove: (s) => {
+    run('UPDATE items SET supplier_id = NULL WHERE supplier_id = ?', s.id);
+    run('DELETE FROM suppliers WHERE id = ?', s.id);
+  },
+})));
+
+/** Drafts and cancelled purchase orders only — and only if nothing was ever received or paid against them. */
+supplyRouter.post('/purchase-orders/bulk-delete', h((req) => bulkDelete(req.user, req.body?.ids, {
+  table: 'purchase_orders', entity: 'po', noun: 'سفارش خرید',
+  label: (p) => p.number,
+  check: (p) => {
+    if (!['draft', 'cancelled'].includes(p.status)) return 'فقط پیش‌نویس یا سفارش لغوشده قابل حذف است';
+    if (val<number>('SELECT COALESCE(SUM(received_qty), 0) FROM po_lines WHERE po_id = ?', p.id) > 0) return 'کالایی از آن رسید شده';
+    if (val<number>("SELECT COUNT(*) FROM stock_moves WHERE ref_type = 'po' AND ref_id = ?", p.id)) return 'در دفتر انبار گردش دارد';
+    if (val<number>("SELECT COUNT(*) FROM expenses WHERE ref_type = 'po' AND ref_id = ?", p.id)) return 'هزینه ثبت‌شده دارد';
+    return null;
+  },
+  remove: (p) => {
+    unlinkTasks('po', p.id);
+    run('DELETE FROM purchase_orders WHERE id = ?', p.id); // lines cascade
+  },
+})));
 
 supplyRouter.post('/purchase-orders/:id/status', h((req) => {
   const po = mustFind('purchase_orders', req.params.id, req.user.orgId, 'سفارش خرید');

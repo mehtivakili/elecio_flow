@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { insert, normalizeSearch, one, q, run, tx, uid, update, val, type Row } from '../db.ts';
-import { DAY, HttpError, getSettings, guard, h, logActivity, mustFind } from '../core.ts';
+import { DAY, HttpError, bulkDelete, getSettings, guard, h, logActivity, mustFind, unlinkTasks } from '../core.ts';
 import {
   buildContactSearch, hydrateContacts, nextBestAction, rescore, setStage, syncContactMeta,
 } from '../services/crm.ts';
@@ -137,14 +137,35 @@ crmRouter.post('/contacts/:id/stage', h((req) => {
   return { ok: true };
 }));
 
+/** Why a contact can't be deleted (it anchors sales, service or installed devices), or null. */
+function contactDeleteBlocker(c: Row): string | null {
+  if (val<number>('SELECT COUNT(*) FROM orders WHERE contact_id = ?', c.id)) return 'سفارش فروش ثبت‌شده دارد';
+  if (val<number>('SELECT COUNT(*) FROM tickets WHERE contact_id = ?', c.id)) return 'تیکت خدمات دارد';
+  if (val<number>('SELECT COUNT(*) FROM units WHERE contact_id = ?', c.id)) return 'دستگاه نصب‌شده یا رزروشده دارد';
+  return null;
+}
+
+function removeContact(c: Row) {
+  // Addresses, tags, interactions and follow-ups cascade with the contact.
+  run('UPDATE contacts SET referred_by_id = NULL WHERE referred_by_id = ?', c.id);
+  unlinkTasks('contact', c.id);
+  run('DELETE FROM contacts WHERE id = ?', c.id);
+}
+
 crmRouter.delete('/contacts/:id', h((req) => {
   const c = mustFind('contacts', req.params.id, req.user.orgId, 'مخاطب');
-  if (val<number>('SELECT COUNT(*) FROM orders WHERE contact_id = ?', c.id)) {
-    throw new HttpError(409, 'این مخاطب سفارش ثبت‌شده دارد و قابل حذف نیست');
-  }
-  run('DELETE FROM contacts WHERE id = ?', c.id);
+  const blocker = contactDeleteBlocker(c);
+  if (blocker) throw new HttpError(409, `این مخاطب ${blocker} و قابل حذف نیست`);
+  tx(() => removeContact(c));
   logActivity(req.user, 'contact', c.id, 'delete', `حذف مخاطب ${c.name}`);
 }));
+
+crmRouter.post('/contacts/bulk-delete', h((req) => bulkDelete(req.user, req.body?.ids, {
+  table: 'contacts', entity: 'contact', noun: 'مخاطب',
+  label: (c) => c.name,
+  check: contactDeleteBlocker,
+  remove: removeContact,
+})));
 
 /* ───────────── Interactions & follow-ups ───────────── */
 

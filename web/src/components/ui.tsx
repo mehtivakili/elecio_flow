@@ -5,7 +5,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
-import { Loader2, X, Inbox, Star, SlidersHorizontal } from 'lucide-react';
+import { Loader2, X, Inbox, Star, SlidersHorizontal, Check } from 'lucide-react';
 import clsx from 'clsx';
 import { initials, num } from '../lib/format';
 import { useIsMobile } from '../lib/media';
@@ -577,15 +577,65 @@ export function Filters({ children, count = 0, onReset }: { children: ReactNode;
   );
 }
 
-/** A tappable row-card used in place of table rows on phones. */
+/** Round check mark used by multi-select lists and cards. */
+export function SelectDot({ checked }: { checked: boolean }) {
+  return (
+    <span className={clsx('flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition', checked ? 'border-iris bg-iris text-night' : 'border-mist/45')}>
+      {checked && <Check size={14} strokeWidth={3} />}
+    </span>
+  );
+}
+
+/**
+ * A tappable row-card used in place of table rows on phones. A long press starts
+ * multi-select (`onLongPress`); while `selecting`, a tap toggles the card instead of
+ * opening it and inner links/buttons are inert.
+ */
 export function ListCard({
-  to, onClick, accent, className, children,
-}: { to?: string; onClick?: () => void; accent?: string; className?: string; children: ReactNode }) {
+  to, onClick, accent, className, children, selecting, selected, onSelect, onLongPress,
+}: {
+  to?: string; onClick?: () => void; accent?: string; className?: string; children: ReactNode;
+  selecting?: boolean; selected?: boolean; onSelect?: () => void; onLongPress?: () => void;
+}) {
+  const timer = useRef(0);
+  const fired = useRef(false);
   const cls = clsx('list-card', accent && 'accented', className);
   const style = accent ? { boxShadow: `inset -3px 0 0 ${accent}` } : undefined;
-  if (to) return <Link to={to} className={cls} style={style}>{children}</Link>;
-  if (onClick) return <div role="button" tabIndex={0} onClick={onClick} className={cls} style={style}>{children}</div>;
-  return <div className={cls} style={style}>{children}</div>;
+
+  if (selecting) {
+    return (
+      <div
+        role="checkbox"
+        aria-checked={!!selected}
+        tabIndex={0}
+        onClick={onSelect}
+        onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); onSelect?.(); } }}
+        className={clsx(cls, 'flex items-center gap-3', selected && 'list-card-selected')}
+        style={style}
+      >
+        <SelectDot checked={!!selected} />
+        <div className="pointer-events-none min-w-0 flex-1">{children}</div>
+      </div>
+    );
+  }
+
+  const cancel = () => clearTimeout(timer.current);
+  const press = onLongPress ? {
+    onPointerDown: (e: React.PointerEvent) => {
+      if (e.pointerType === 'mouse') return;
+      fired.current = false;
+      timer.current = window.setTimeout(() => { fired.current = true; navigator.vibrate?.(15); onLongPress(); }, 480);
+    },
+    onPointerUp: cancel,
+    onPointerCancel: cancel,
+    onPointerLeave: cancel,
+    onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
+    // The click that ends a long press must not also open the record.
+    onClickCapture: (e: React.MouseEvent) => { if (fired.current) { e.preventDefault(); e.stopPropagation(); fired.current = false; } },
+  } : {};
+  if (to) return <Link to={to} className={cls} style={style} {...press}>{children}</Link>;
+  if (onClick) return <div role="button" tabIndex={0} onClick={onClick} className={cls} style={style} {...press}>{children}</div>;
+  return <div className={cls} style={style} {...press}>{children}</div>;
 }
 
 /** Label / value cell inside a ListCard. */

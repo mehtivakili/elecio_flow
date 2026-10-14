@@ -8,6 +8,7 @@ import { useSession } from '../../lib/session';
 import { Button, Card, Empty, Field, Input, ListCard, Modal, MoneyInput, PageHeader, Progress, Spinner, Stat, Tabs, Textarea } from '../../components/ui';
 import { DateInput, Picker } from '../../components/inputs';
 import { ItemPicker, PoStatusPill } from '../../components/domain';
+import { SelectAllCell, SelectButton, SelectCell, SelectionBar, useSelection } from '../../components/selection';
 import { compactMoney, date, money, num } from '../../lib/format';
 
 export default function PurchaseOrdersPage() {
@@ -22,6 +23,7 @@ export default function PurchaseOrdersPage() {
 
   const reorder = items.filter((i) => i.needsReorder && i.kind !== 'service');
   const list = data.filter((p) => tab === 'all' || (tab === 'open' ? !['received', 'cancelled'].includes(p.status) : p.status === 'received'));
+  const sel = useSelection(list.map((p) => p.id));
   const openPos = data.filter((p) => ['sent', 'confirmed', 'in_transit', 'partial'].includes(p.status));
 
   return (
@@ -30,7 +32,8 @@ export default function PurchaseOrdersPage() {
         icon={Truck}
         title="سفارش‌های خرید"
         subtitle="خریدهای ثبت‌شده توسط ما برای تأمین کالا و قطعات؛ از سفارش تا رسید انبار"
-        fab={{ label: 'سفارش خرید جدید', icon: PackagePlus, onClick: () => setCreating([]) }}
+        aside={<SelectButton sel={sel} />}
+        fab={sel.active ? undefined : { label: 'سفارش خرید جدید', icon: PackagePlus, onClick: () => setCreating([]) }}
       />
       <div className="stat-rail mb-5 grid grid-cols-2 gap-4 md:grid-cols-4">
         <Stat label="خریدهای در جریان" value={num(openPos.length)} hint={`${compactMoney(openPos.reduce((s, p) => s + p.total, 0))} ${settings.company.currency}`} tone="sky" />
@@ -66,7 +69,8 @@ export default function PurchaseOrdersPage() {
           {list.map((p) => {
             const received = p.qtyTotal ? (p.qtyReceived / p.qtyTotal) * 100 : 0;
             return (
-              <ListCard key={p.id} to={`/scm/purchase-orders/${p.id}`} accent={p.delayed ? '#FF499E' : undefined}>
+              <ListCard key={p.id} to={`/scm/purchase-orders/${p.id}`} accent={p.delayed ? '#FF499E' : undefined}
+                selecting={sel.active} selected={sel.has(p.id)} onSelect={() => sel.toggle(p.id)} onLongPress={() => sel.start(p.id)}>
                 <div className="flex items-center justify-between gap-2">
                   <span className="flex min-w-0 items-center gap-1.5">
                     {p.delayed && <AlertTriangle size={14} className="shrink-0 text-rose" />}
@@ -88,9 +92,10 @@ export default function PurchaseOrdersPage() {
         </div>
         <Card pad={false} bodyClass="overflow-x-auto" className="hidden md:block">
           <table className="tbl">
-            <thead><tr><th>شماره</th><th>تأمین‌کننده</th><th>وضعیت</th><th>مبلغ</th><th>دریافت</th><th>تاریخ تحویل</th><th>حمل</th></tr></thead>
+            <thead><tr><SelectAllCell sel={sel} /><th>شماره</th><th>تأمین‌کننده</th><th>وضعیت</th><th>مبلغ</th><th>دریافت</th><th>تاریخ تحویل</th><th>حمل</th></tr></thead>
             <tbody>{list.map((p) => (
-              <tr key={p.id} className="cursor-pointer" onClick={() => navigate(`/scm/purchase-orders/${p.id}`)}>
+              <tr key={p.id} className={clsx('cursor-pointer', sel.has(p.id) && 'row-selected')} onClick={() => (sel.active ? sel.toggle(p.id) : navigate(`/scm/purchase-orders/${p.id}`))}>
+                <SelectCell sel={sel} id={p.id} />
                 <td className="ltr text-right font-medium text-ink">{p.number}</td>
                 <td>{p.supplierName}</td>
                 <td><div className="flex items-center gap-1.5"><PoStatusPill status={p.status} />{p.delayed && <AlertTriangle size={14} className="text-rose" />}</div></td>
@@ -104,6 +109,7 @@ export default function PurchaseOrdersPage() {
         </Card>
       </>)}
       <PoFormModal open={creating !== null} onClose={() => setCreating(null)} prefill={creating ?? []} onSaved={(id) => navigate(`/scm/purchase-orders/${id}`)} />
+      <SelectionBar sel={sel} path="/purchase-orders/bulk-delete" noun="سفارش خرید" />
     </div>
   );
 }
