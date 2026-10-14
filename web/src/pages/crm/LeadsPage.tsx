@@ -32,8 +32,8 @@ export default function LeadsPage() {
         <div className="space-y-2 md:space-y-3">
           {leads.map((c, i) => (
             <div key={c.id} className="glass overflow-hidden">
-              <div className="flex items-start gap-2.5 px-3 py-2.5 md:hidden">
-                <span className={clsx('num mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-xs font-bold', i < 3 && tier === 'hot' ? 'bg-rose/20 text-rose' : 'bg-ink/[0.06] text-mist')}>{num(i + 1)}</span>
+              <div className="flex items-center gap-2.5 p-3 md:hidden">
+                <span className={clsx('num flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-xs font-bold', i < 3 && tier === 'hot' ? 'bg-rose/20 text-rose' : 'bg-ink/[0.06] text-mist')}>{num(i + 1)}</span>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
                     <Link to={`/crm/contacts/${c.id}`} className="flex min-w-0 items-center gap-1 text-[14.5px] font-bold text-ink">

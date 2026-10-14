@@ -12,6 +12,7 @@ import { api } from '../lib/api';
 import { useSession } from '../lib/session';
 import { useIsMobile } from '../lib/media';
 import { useTableLabels } from '../lib/tableLabels';
+import { useScrollingDown } from '../lib/scroll';
 import { ROLE_LABELS } from '@shared/defaults';
 import { Avatar, Sheet } from './ui';
 import { isolateCodes, num } from '../lib/format';
@@ -651,8 +652,9 @@ export function Shell({ children }: { children?: ReactNode }) {
   const [palette, setPalette] = useState(false);
   const [menu, setMenu] = useState(false);
   const [sectionSheet, setSectionSheet] = useState<NavSection | null>(null);
-  const [compact, setCompact] = useState(false);
   const location = useLocation();
+  // Phones: fold the sub-section bar away while reading down, bring it back on the way up.
+  const compact = useScrollingDown(mobile, location.pathname);
   const badges = useNavBadges();
   useTableLabels(mobile);
 
@@ -667,27 +669,11 @@ export function Shell({ children }: { children?: ReactNode }) {
   const mainRef = useRef<HTMLElement>(null);
   useEffect(() => {
     mainRef.current?.scrollTo({ top: 0 });
-    setCompact(false);
     setSectionSheet(null);
     setMenu(false);
     const here = locate(location.pathname);
     try { sessionStorage.setItem(LAST_KEY, JSON.stringify({ ...readLast(), [here.section.id]: location.pathname + location.search })); } catch { /* ignore */ }
   }, [location.pathname, location.search]);
-
-  // Phones: fold the sub-section strip away while reading down, bring it back on the way up.
-  useEffect(() => {
-    const main = mainRef.current;
-    if (!main || !mobile) return;
-    let last = main.scrollTop;
-    const onScroll = () => {
-      const y = main.scrollTop;
-      if (Math.abs(y - last) < 10) return;
-      setCompact(y > last && y > 120);
-      last = y;
-    };
-    main.addEventListener('scroll', onScroll, { passive: true });
-    return () => main.removeEventListener('scroll', onScroll);
-  }, [mobile]);
 
   return (
     <div className="grid-bg flex h-[100dvh] overflow-hidden" dir="rtl">

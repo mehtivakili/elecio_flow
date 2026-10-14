@@ -9,6 +9,7 @@ import { Loader2, X, Inbox, Star, SlidersHorizontal } from 'lucide-react';
 import clsx from 'clsx';
 import { initials, num } from '../lib/format';
 import { useIsMobile } from '../lib/media';
+import { useScrollingDown } from '../lib/scroll';
 
 type Icon = ComponentType<{ size?: number; className?: string; strokeWidth?: number }>;
 
@@ -126,20 +127,8 @@ export function PageHeader({
 /** Floating primary action for phones; it folds to an icon while the list scrolls down. */
 export function Fab({ icon: IconCmp, label, onClick }: FabAction) {
   const mobile = useIsMobile();
-  const [compact, setCompact] = useState(false);
-  useEffect(() => {
-    const main = document.getElementById('app-main');
-    if (!main || !mobile) return;
-    let last = main.scrollTop;
-    const onScroll = () => {
-      const y = main.scrollTop;
-      if (Math.abs(y - last) < 8) return;
-      setCompact(y > last && y > 80);
-      last = y;
-    };
-    main.addEventListener('scroll', onScroll, { passive: true });
-    return () => main.removeEventListener('scroll', onScroll);
-  }, [mobile]);
+  // Folds only on pages long enough to scroll (roughly 5+ cards), with hysteresis.
+  const compact = useScrollingDown(mobile);
   if (!mobile) return null;
   return createPortal(
     <button type="button" onClick={onClick} className={clsx('fab no-print', compact && 'fab-compact')} aria-label={label}>
@@ -298,7 +287,7 @@ export function Tabs<T extends string>({
             value === t.key ? 'nav-active font-semibold' : 'text-mist hover:bg-ink/[0.05] hover:text-ink',
           )}
         >
-          {t.icon && <t.icon size={15} className="shrink-0" />}
+          {t.icon && !(mobile && tabs.length > 3) && <t.icon size={15} className="shrink-0" />}
           <span className="truncate">{t.label}</span>
           {t.count !== undefined && (
             <span className={clsx('num shrink-0 text-[11px]', mobile ? 'opacity-70' : clsx('rounded-full px-1.5', value === t.key ? 'bg-night/20' : 'bg-ink/10'))}>{num(t.count)}</span>
@@ -515,8 +504,22 @@ export const useConfirm = () => useContext(ConfirmContext);
 /* ───────────────────────── Misc ───────────────────────── */
 
 export function KV({ items, cols = 2 }: { items: [ReactNode, ReactNode][]; cols?: 1 | 2 | 3 }) {
+  // Single column (side panels): a tidy two-sided list — label on the start side,
+  // value aligned to the end, hairline between rows. Far denser than stacked pairs.
+  if (cols === 1) {
+    return (
+      <dl className="-my-1 divide-y divide-line/45 text-[13.5px]">
+        {items.map(([k, v], i) => (
+          <div key={i} className="flex items-baseline justify-between gap-4 py-2">
+            <dt className="shrink-0 text-[12.5px] text-mist">{k}</dt>
+            <dd className="min-w-0 text-left font-medium leading-6 text-ink [overflow-wrap:anywhere] [&_.ltr]:text-left">{v === undefined || v === null || v === '' ? <span className="text-mist">—</span> : v}</dd>
+          </div>
+        ))}
+      </dl>
+    );
+  }
   return (
-    <dl className={clsx('grid gap-x-6 gap-y-3 text-sm', cols === 1 ? 'grid-cols-1' : cols === 2 ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1 sm:grid-cols-3')}>
+    <dl className={clsx('grid gap-x-6 gap-y-3 text-sm', cols === 2 ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1 sm:grid-cols-3')}>
       {items.map(([k, v], i) => (
         <div key={i} className="min-w-0">
           <dt className="text-xs text-mist">{k}</dt>
@@ -578,7 +581,7 @@ export function Filters({ children, count = 0, onReset }: { children: ReactNode;
 export function ListCard({
   to, onClick, accent, className, children,
 }: { to?: string; onClick?: () => void; accent?: string; className?: string; children: ReactNode }) {
-  const cls = clsx('list-card', className);
+  const cls = clsx('list-card', accent && 'accented', className);
   const style = accent ? { boxShadow: `inset -3px 0 0 ${accent}` } : undefined;
   if (to) return <Link to={to} className={cls} style={style}>{children}</Link>;
   if (onClick) return <div role="button" tabIndex={0} onClick={onClick} className={cls} style={style}>{children}</div>;

@@ -179,16 +179,18 @@ export default function ContactPage() {
                 <Button size="sm" variant="action" onClick={() => setTouch({})}>ثبت ارتباط و پیگیری</Button>
               </div>
             ) : pending.map((f: any) => (
-              <div key={f.id} className="flex flex-wrap items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-ink/[0.04]">
-                <Clock size={16} className={f.dueAt < Date.now() ? 'text-rose' : 'text-iris'} />
-                <div className="min-w-0 flex-1">
+              <div key={f.id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl border-b border-line/40 px-1.5 py-2.5 last:border-0 hover:bg-ink/[0.04] md:border-0 md:px-3">
+                <Clock size={16} className={clsx('shrink-0', f.dueAt < Date.now() ? 'text-rose' : 'text-iris')} />
+                <div className="min-w-0 flex-1 basis-[75%] md:basis-auto">
                   <div className="text-sm text-ink">{f.note || 'پیگیری'}</div>
                   <div className={clsx('text-xs', f.dueAt < Date.now() ? 'text-rose' : 'text-mist')}>{dateTime(f.dueAt)} — {relative(f.dueAt)} · {userName(f.userId)}</div>
                 </div>
-                {f.priority === 'high' && <Pill color="#F5B85A">اولویت بالا</Pill>}
-                <Button size="sm" variant="action" icon={PhoneCall} onClick={() => setTouch({ followupId: f.id })}>تماس</Button>
-                <Button size="sm" variant="ghost" icon={AlarmClock} onClick={() => followAction.mutate({ fid: f.id, action: 'snooze' })} title="تعویق یک روزه" />
-                <Button size="sm" variant="ghost" icon={Check} onClick={() => followAction.mutate({ fid: f.id, action: 'complete' })} title="انجام شد" />
+                <div className="mr-auto flex items-center gap-1 md:mr-0">
+                  {f.priority === 'high' && <Pill color="#F5B85A" className="ml-1">اولویت بالا</Pill>}
+                  <Button size="sm" variant="action" icon={PhoneCall} onClick={() => setTouch({ followupId: f.id })}>تماس</Button>
+                  <Button size="sm" variant="ghost" icon={AlarmClock} onClick={() => followAction.mutate({ fid: f.id, action: 'snooze' })} title="تعویق یک روزه" aria-label="تعویق یک روزه" />
+                  <Button size="sm" variant="ghost" icon={Check} onClick={() => followAction.mutate({ fid: f.id, action: 'complete' })} title="انجام شد" aria-label="انجام شد" />
+                </div>
               </div>
             ))}
           </Card>

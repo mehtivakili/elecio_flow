@@ -206,9 +206,12 @@ html { -webkit-tap-highlight-color: transparent; }
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.06);
   background: linear-gradient(180deg, rgba(224, 251, 252, 0.055), rgba(224, 251, 252, 0.03));
-  padding: 10px 12px;
+  padding: 12px;
   transition: transform 0.12s ease, background-color 0.15s ease;
 }
+/* The colour strip is an inset shadow on the start edge: keep the visible gap after it
+   equal to the other three sides. */
+.list-card.accented { padding-inline-start: 15px; }
 .list-card:active { transform: scale(0.985); background-color: rgba(224, 251, 252, 0.04); }
 
 @media (max-width: 767px) {
@@ -395,3 +398,21 @@ html { -webkit-tap-highlight-color: transparent; }
 }
 .edge-hint.left-1 { animation: edge-nudge-left 1.8s ease-in-out infinite; }
 .edge-hint.right-1 { animation: edge-nudge-right 1.8s ease-in-out infinite; }
+
+/* Pipeline card actions: green call on top, call report below */
+.call-btn, .report-btn {
+  display: flex; height: 50px; width: 52px; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  border-radius: 15px; font-size: 10.5px; font-weight: 700; transition: transform .12s ease, filter .15s ease;
+}
+.call-btn {
+  color: #0FD69D;
+  background: linear-gradient(180deg, rgba(15, 214, 157, 0.22), rgba(15, 214, 157, 0.1));
+  border: 1px solid rgba(15, 214, 157, 0.4);
+  box-shadow: 0 8px 18px -10px rgba(15, 214, 157, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+.report-btn {
+  color: #9fb8f0;
+  background: rgba(119, 155, 231, 0.12);
+  border: 1px solid rgba(119, 155, 231, 0.3);
+}
+.call-btn:active, .report-btn:active { transform: scale(0.93); filter: brightness(1.15); }

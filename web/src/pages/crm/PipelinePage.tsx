@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { GitBranch, Star, Phone, PhoneCall, UserPlus, LayoutGrid, List } from 'lucide-react';
+import { GitBranch, Star, Phone, PhoneCall, UserPlus, LayoutGrid, List, NotebookPen } from 'lucide-react';
 import clsx from 'clsx';
 import { post } from '../../lib/api';
 import { useAction, useApi } from '../../lib/hooks';
@@ -134,28 +134,35 @@ export default function PipelinePage() {
                 {cards.map((c) => {
                   const phone = c.phones?.[0]?.value;
                   return (
-                    <div key={c.id} className="list-card" style={{ boxShadow: `inset -3px 0 0 ${stage.color}` }}>
+                    <div key={c.id} className="list-card accented" style={{ boxShadow: `inset -3px 0 0 ${stage.color}` }}>
                       <div className="flex items-center gap-3">
-                        {stage.final
-                          ? <Avatar name={c.name} size={44} color={stage.color} />
-                          : <ScoreRing score={c.score} hot={settings.scoring.hotThreshold} warm={settings.scoring.warmThreshold} />}
-                        <Link to={`/crm/contacts/${c.id}`} className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1 text-[14.5px] font-bold text-ink">
-                            {!!c.starred && <Star size={12} className="shrink-0 fill-amber text-amber" />}<span className="truncate">{c.name}</span>
-                          </div>
-                          <div className="truncate text-[11.5px] text-mist">
-                            {[c.addresses?.[0]?.county, c.attrs?.machines ? `${num(c.attrs.machines)} ماشین` : null, c.lastContactAt ? relative(c.lastContactAt) : 'بدون تماس'].filter(Boolean).join(' · ')}
-                          </div>
-                          {c.nextAction && <div className="mt-1"><NextActionTag action={c.nextAction} /></div>}
-                        </Link>
-                      </div>
-                      {c.stage === 'lost' && c.lostReason && <div className="mt-1.5 text-[11px] text-rose">دلیل: {c.lostReason}</div>}
-                      <div className="mt-2.5 flex items-center gap-1.5">
-                        <Select aria-label={`انتقال ${c.name}`} className="!min-h-[34px] h-[34px] flex-1 py-0 text-xs" value={c.stage} onChange={(e) => moveContact(c, e.target.value)}>
-                          {settings.lifecycleStages.map((s) => <option key={s.key} value={s.key}>{s.key === c.stage ? 'انتقال به مرحله…' : s.label}</option>)}
-                        </Select>
-                        {phone && <a href={`tel:${phone}`} className="icon-chip text-mint" aria-label="تماس"><Phone size={15} /></a>}
-                        <button type="button" onClick={() => setTouch(c)} className="icon-chip text-iris" aria-label="ثبت ارتباط"><PhoneCall size={15} /></button>
+                        <div className="shrink-0">
+                          {stage.final
+                            ? <Avatar name={c.name} size={44} color={stage.color} />
+                            : <ScoreRing score={c.score} hot={settings.scoring.hotThreshold} warm={settings.scoring.warmThreshold} />}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <Link to={`/crm/contacts/${c.id}`} className="block">
+                            <div className="flex items-center gap-1 text-[14.5px] font-bold text-ink">
+                              {!!c.starred && <Star size={12} className="shrink-0 fill-amber text-amber" />}<span className="truncate">{c.name}</span>
+                            </div>
+                            <div className="truncate text-[11.5px] text-mist">
+                              {[c.addresses?.[0]?.county, c.attrs?.machines ? `${num(c.attrs.machines)} ماشین` : null, c.lastContactAt ? relative(c.lastContactAt) : 'بدون تماس'].filter(Boolean).join(' · ')}
+                            </div>
+                            {c.nextAction && <div className="mt-1"><NextActionTag action={c.nextAction} /></div>}
+                          </Link>
+                          {c.stage === 'lost' && c.lostReason && <div className="mt-1.5 text-[11px] text-rose">دلیل: {c.lostReason}</div>}
+                          <Select aria-label={`انتقال ${c.name}`} className="mt-2.5 !min-h-[34px] h-[34px] py-0 text-xs" value={c.stage} onChange={(e) => moveContact(c, e.target.value)}>
+                            {settings.lifecycleStages.map((s) => <option key={s.key} value={s.key}>{s.key === c.stage ? 'انتقال به مرحله…' : s.label}</option>)}
+                          </Select>
+                        </div>
+                        {/* Call on top (green), call report under it — big thumb targets on the left, centred */}
+                        <div className="flex shrink-0 flex-col gap-2">
+                          {phone
+                            ? <a href={`tel:${phone}`} className="call-btn" aria-label={`تماس با ${c.name}`}><Phone size={19} strokeWidth={2.3} /><span>تماس</span></a>
+                            : <span className="call-btn opacity-35" aria-disabled="true"><Phone size={19} strokeWidth={2.3} /><span>تماس</span></span>}
+                          <button type="button" onClick={() => setTouch(c)} className="report-btn" aria-label={`ثبت گزارش تماس ${c.name}`}><NotebookPen size={18} strokeWidth={2.2} /><span>گزارش</span></button>
+                        </div>
                       </div>
                     </div>
                   );

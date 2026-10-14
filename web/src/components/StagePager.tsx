@@ -206,11 +206,11 @@ export function StagePager({ stages, renderPage }: { stages: PagerStage[]; rende
       const bottom = tabbar ? tabbar.getBoundingClientRect().top - 6 : window.innerHeight;
       setFill(Math.max(0, Math.round(bottom - (mainTop + offset))));
     };
+    // Not tied to main's own resizes: the header folding while scrolling would
+    // otherwise resize the pager mid-scroll and make the page stutter.
     measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(main);
     window.addEventListener('resize', measure);
-    return () => { ro.disconnect(); window.removeEventListener('resize', measure); };
+    return () => window.removeEventListener('resize', measure);
   }, [signature]);
 
   useEffect(() => {

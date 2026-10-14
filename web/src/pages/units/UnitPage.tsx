@@ -54,7 +54,7 @@ export default function UnitPage() {
           {atCustomer && <Button variant="glow" icon={Wrench} onClick={() => navigate(`/service/tickets?new=1&unit=${u.id}`)}>تیکت خدمات</Button>}
         </>} />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2.5 md:gap-4 lg:grid-cols-4">
         {[
           { icon: Factory, label: 'ساخت', value: date(u.builtAt ?? u.createdAt), sub: u.workOrderNumber, to: u.workOrderId && `/production/work-orders/${u.workOrderId}` },
           { icon: ShoppingCart, label: 'فروش', value: u.orderNumber ?? '—', sub: u.contactName, to: u.orderId && `/sales/orders/${u.orderId}` },
@@ -62,9 +62,9 @@ export default function UnitPage() {
           { icon: ClipboardCheck, label: 'گارانتی تا', value: date(u.warrantyUntil), sub: `${num(u.warrantyMonths ?? settings.company.warrantyMonths)} ماهه` },
         ].map((b) => {
           const body = (
-            <div className="glass flex items-center gap-3 p-4 transition hover:border-iris/30">
-              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-iris/15 text-iris"><b.icon size={18} /></span>
-              <div className="min-w-0"><div className="text-xs text-mist">{b.label}</div><div className="ltr truncate text-right font-semibold">{b.value}</div><div className="truncate text-[11px] text-mist">{b.sub}</div></div>
+            <div className="glass flex h-full items-center gap-2.5 px-3 py-2.5 transition hover:border-iris/30 md:gap-3 md:p-4">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-iris/15 text-iris md:h-10 md:w-10 md:rounded-xl"><b.icon size={16} /></span>
+              <div className="min-w-0"><div className="text-[11.5px] text-mist md:text-xs">{b.label}</div><div className="ltr truncate text-right text-[13.5px] font-semibold md:text-base">{b.value}</div>{b.sub && <div className="truncate text-[11px] text-mist">{b.sub}</div>}</div>
             </div>
           );
           return b.to ? <Link key={b.label} to={b.to}>{body}</Link> : <div key={b.label}>{body}</div>;
@@ -72,7 +72,7 @@ export default function UnitPage() {
       </div>
 
       <Card title="روند آماده‌سازی این دستگاه" subtitle="مراحل اجباری ثبت‌شده برای همین شماره‌سریال" icon={Factory}>
-        <div className="grid gap-2 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {[
             { key: 'firmware', label: 'آماده‌سازی نرم‌افزار', icon: Upload },
             { key: 'assembly', label: 'مونتاژ', icon: Wrench },
