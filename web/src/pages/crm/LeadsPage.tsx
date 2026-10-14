@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Flame, PhoneCall, ChevronDown, Star } from 'lucide-react';
+import { Flame, Phone, PhoneCall, ChevronDown, Star } from 'lucide-react';
 import clsx from 'clsx';
 import { useApi } from '../../lib/hooks';
 import { useSession } from '../../lib/session';
@@ -29,10 +29,32 @@ export default function LeadsPage() {
         actions={<Tabs value={tier} onChange={setTier} tabs={[{ key: 'hot', label: `داغ (≥ ${num(settings.scoring.hotThreshold)})` }, { key: 'warm', label: 'گرم' }]} />}
       />
       {isLoading ? <Spinner /> : leads.length === 0 ? <Card><Empty icon={Flame} title="سرنخی در این دسته نیست" /></Card> : (
-        <div className="space-y-3">
+        <div className="space-y-2 md:space-y-3">
           {leads.map((c, i) => (
             <div key={c.id} className="glass overflow-hidden">
-              <div className="flex flex-col gap-3 p-4 md:flex-row md:flex-wrap md:items-center md:gap-4">
+              <div className="flex items-start gap-2.5 px-3 py-2.5 md:hidden">
+                <span className={clsx('num mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-xs font-bold', i < 3 && tier === 'hot' ? 'bg-rose/20 text-rose' : 'bg-ink/[0.06] text-mist')}>{num(i + 1)}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <Link to={`/crm/contacts/${c.id}`} className="flex min-w-0 items-center gap-1 text-[14.5px] font-bold text-ink">
+                      {!!c.starred && <Star size={12} className="shrink-0 fill-amber text-amber" />}<span className="truncate">{c.name}</span>
+                    </Link>
+                    <span className={clsx('num shrink-0 text-sm font-extrabold', c.score >= settings.scoring.hotThreshold ? 'text-rose' : 'text-amber')}>{num(c.score)}</span>
+                  </div>
+                  <div className="truncate text-[11.5px] text-mist">
+                    {[c.addresses?.[0]?.county, c.attrs?.machines ? `${num(c.attrs.machines)} ماشین` : null, c.estimatedValue ? compactMoney(c.estimatedValue) : null, c.lastContactAt ? relative(c.lastContactAt) : 'بدون تماس'].filter(Boolean).join(' · ')}
+                  </div>
+                  <div className="mt-1.5 flex items-center justify-between gap-2">
+                    <div className="min-w-0 truncate">{c.nextAction ? <NextActionTag action={c.nextAction} /> : <LifecyclePill stage={c.stage} />}</div>
+                    <div className="flex shrink-0 gap-1.5">
+                      {c.phones?.[0]?.value && <a href={`tel:${c.phones[0].value}`} className="icon-chip text-mint" aria-label="تماس"><Phone size={15} /></a>}
+                      <button type="button" onClick={() => setTouch(c)} className="icon-chip text-iris" aria-label="ثبت ارتباط"><PhoneCall size={15} /></button>
+                      <button type="button" onClick={() => setOpen(open === c.id ? null : c.id)} className="icon-chip" aria-label="جزئیات امتیاز"><ChevronDown size={16} className={clsx('transition', open === c.id && 'rotate-180')} /></button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="hidden gap-4 p-4 md:flex md:flex-row md:flex-wrap md:items-center">
                 <div className="flex min-w-0 items-center gap-3 md:min-w-[200px] md:flex-1">
                 <span className={clsx('num flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-bold', i < 3 && tier === 'hot' ? 'bg-rose/20 text-rose' : 'bg-ink/[0.06] text-mist')}>{num(i + 1)}</span>
                 <div className="min-w-0 flex-1">
@@ -47,7 +69,7 @@ export default function LeadsPage() {
                   </div>
                 </div>
                 </div>
-                <div className="grid grid-cols-3 items-end gap-3 rounded-xl bg-deep/50 p-3 md:contents">
+                <div className="contents">
                 <ScoreMeter score={c.score} hot={settings.scoring.hotThreshold} warm={settings.scoring.warmThreshold} />
                 <div className="text-xs md:w-28">
                   <div className="text-mist">ارزش تخمینی</div>
@@ -65,7 +87,7 @@ export default function LeadsPage() {
                 </div>
               </div>
               {open === c.id && (
-                <div className="border-t border-line/60 bg-deep/40 p-5"><div className="max-w-xl"><ScoreBreakdown parts={c.scoreParts ?? []} score={c.score} /></div></div>
+                <div className="border-t border-line/60 bg-deep/40 p-3.5 md:p-5"><div className="max-w-xl"><ScoreBreakdown parts={c.scoreParts ?? []} score={c.score} /></div></div>
               )}
             </div>
           ))}

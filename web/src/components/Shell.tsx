@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   LayoutDashboard, Users, GitBranch, Flame, PhoneCall, Map, ShoppingCart, Truck, Building2, Boxes, ArrowLeftRight,
   Factory, Cpu, LifeBuoy, Wallet, ListChecks, Settings, PanelRightClose, PanelRightOpen, LogOut, Search, Bell, Warehouse,
   Plus, ChevronLeft, ChevronRight, AlertTriangle, AlertOctagon, Info, CornerDownLeft, UserPlus, FileText, Wrench, PackagePlus,
-  Route, X, type LucideIcon,
+  Route, X, ChevronDown, type LucideIcon,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../lib/api';
@@ -19,7 +19,8 @@ import { matchesSearch } from '@shared/search';
 
 /* ───────────────────────── Navigation map ───────────────────────── */
 
-interface NavItem { to: string; label: string; short?: string; hint?: string; icon: LucideIcon; end?: boolean; badge?: string }
+/** `tab` is the very short label used in the phone's fixed sub-section bar (≤ ~11 chars). */
+interface NavItem { to: string; label: string; short?: string; tab?: string; hint?: string; icon: LucideIcon; end?: boolean; badge?: string }
 interface NavSection { id: string; label: string; tab: string; icon: LucideIcon; items: NavItem[]; create?: [string, string, LucideIcon][] }
 
 /** One map drives the desktop sidebar, the phone tab bar, the sub-section chips and the section sheets. */
@@ -33,8 +34,8 @@ const SECTIONS: NavSection[] = [
     items: [
       { to: '/crm/contacts', label: 'مخاطبین و مشتریان', short: 'مخاطبین', icon: Users, hint: 'پرونده کامل هر مشتری' },
       { to: '/crm/pipeline', label: 'قیف فروش', icon: GitBranch, hint: 'مراحل تبدیل سرنخ' },
-      { to: '/crm/leads', label: 'سرنخ‌های داغ', icon: Flame, hint: 'بیشترین احتمال خرید' },
-      { to: '/crm/followups', label: 'پیگیری‌ها', icon: PhoneCall, badge: 'followups', hint: 'صف تماس‌های امروز' },
+      { to: '/crm/leads', label: 'سرنخ‌های داغ', tab: 'سرنخ داغ', icon: Flame, hint: 'بیشترین احتمال خرید' },
+      { to: '/crm/followups', label: 'پیگیری‌ها', tab: 'پیگیری', icon: PhoneCall, badge: 'followups', hint: 'صف تماس‌های امروز' },
       { to: '/crm/map', label: 'نقشه عملیات', short: 'نقشه', icon: Map, hint: 'پراکندگی مشتریان' },
     ],
     create: [['سرنخ / مخاطب', '/crm/contacts?new=1', UserPlus]],
@@ -44,8 +45,8 @@ const SECTIONS: NavSection[] = [
     items: [
       { to: '/sales/orders', label: 'سفارش فروش', icon: ShoppingCart, badge: 'sales', hint: 'پیش‌فاکتور تا تحویل' },
       { to: '/scm/purchase-orders', label: 'سفارش خرید', icon: Truck, badge: 'scm', hint: 'خرید قطعات و کالا' },
-      { to: '/scm/suppliers', label: 'تأمین‌کنندگان', icon: Building2, hint: 'کارنامه تحویل' },
-      { to: '/operations/product-flow', label: 'فرآیند تأمین محصول', short: 'فرآیند محصول', icon: Route, hint: 'چک‌لیست مراحل' },
+      { to: '/scm/suppliers', label: 'تأمین‌کنندگان', tab: 'تأمین‌کننده', icon: Building2, hint: 'کارنامه تحویل' },
+      { to: '/operations/product-flow', label: 'فرآیند تأمین محصول', short: 'فرآیند محصول', tab: 'فرآیند', icon: Route, hint: 'چک‌لیست مراحل' },
     ],
     create: [['سفارش فروش', '/sales/orders?new=1', FileText], ['سفارش خرید', '/scm/purchase-orders?new=1', PackagePlus]],
   },
@@ -54,7 +55,7 @@ const SECTIONS: NavSection[] = [
     items: [
       { to: '/inventory/items', label: 'کالاها و قطعات', short: 'کالاها', icon: Boxes, badge: 'inventory', hint: 'تعریف کالا و BOM' },
       { to: '/inventory/stock', label: 'موجودی انبار', short: 'موجودی', icon: Warehouse, hint: 'سطح موجودی و شمارش' },
-      { to: '/inventory/moves', label: 'تراکنش‌های انبار', short: 'تراکنش‌ها', icon: ArrowLeftRight, hint: 'ورود و خروج کالا' },
+      { to: '/inventory/moves', label: 'تراکنش‌های انبار', short: 'تراکنش‌ها', tab: 'تراکنش', icon: ArrowLeftRight, hint: 'ورود و خروج کالا' },
       { to: '/production/work-orders', label: 'دستورهای تولید', short: 'تولید', icon: Factory, badge: 'production', hint: 'خط تولید و QC' },
       { to: '/units', label: 'شناسنامه دستگاه‌ها', short: 'دستگاه‌ها', icon: Cpu, hint: 'سریال، گارانتی، تعمیر' },
     ],
@@ -494,17 +495,13 @@ function MenuSheet({ open, onClose, badges }: { open: boolean; onClose: () => vo
   );
 }
 
-function MobileTopBar({ onSearch, onMenu, compact }: { onSearch: () => void; onMenu: () => void; compact: boolean }) {
+function MobileTopBar({ onSearch, onMenu, onSection, compact }: { onSearch: () => void; onMenu: () => void; onSection: (s: NavSection) => void; compact: boolean }) {
   const { me, org } = useSession();
   const location = useLocation();
   const navigate = useNavigate();
   const badges = useNavBadges();
   const here = locate(location.pathname);
-  const chips = here.section.items.length > 1 ? here.section.items : [];
-  const stripRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    stripRef.current?.querySelector<HTMLElement>('[data-active="true"]')?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
-  }, [location.pathname]);
+  const subs = here.section.items.length > 1 ? here.section.items : [];
   const back = () => {
     if ((window.history.state?.idx ?? 0) > 0) navigate(-1);
     else navigate(here.item.to);
@@ -521,44 +518,44 @@ function MobileTopBar({ onSearch, onMenu, compact }: { onSearch: () => void; onM
             <Avatar name={me.fullName} size={36} />
           </button>
         )}
-        <button onClick={here.detail ? back : onMenu} className="min-w-0 flex-1 px-1.5 text-right">
+        <button onClick={here.detail ? back : isHome ? onMenu : () => onSection(here.section)} className="min-w-0 flex-1 px-1.5 text-right">
           <div className="truncate text-[11px] leading-4 text-mist">
             {isHome ? <span dir="ltr">ELECIO <span className="text-iris">FLOW</span> · {org.name}</span> : here.detail ? here.section.label : 'ELECIO FLOW'}
           </div>
-          <div className="truncate text-[16px] font-extrabold leading-6 text-ink">
-            {here.detail ? (here.item.short ?? here.item.label) : here.section.label}
+          <div className="flex items-center gap-1 text-[16px] font-extrabold leading-6 text-ink">
+            <span className="truncate">{here.detail ? (here.item.short ?? here.item.label) : here.section.label}</span>
+            {!here.detail && !isHome && <ChevronDown size={16} className="shrink-0 text-mist" />}
           </div>
         </button>
         <button onClick={onSearch} className="icon-btn" aria-label="جستجو"><Search size={19} /></button>
         <QuickCreate />
         <AlertsMenu />
       </div>
-      {chips.length > 0 && (
+      {subs.length > 0 && (
         <div className={clsx('grid transition-[grid-template-rows,opacity] duration-200', compact ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100')}>
           <div className="overflow-hidden">
-            <div ref={stripRef} className="no-scrollbar flex gap-2 overflow-x-auto px-3 pb-2.5" role="tablist" aria-label="زیربخش‌ها">
-              {chips.map((item) => {
+            {/* Fixed, equal-width sub-section bar: every sibling page is one tap away, nothing scrolls sideways */}
+            <nav className="grid px-1" style={{ gridTemplateColumns: `repeat(${subs.length}, minmax(0, 1fr))` }} aria-label="زیربخش‌ها">
+              {subs.map((item) => {
                 const active = here.item.to === item.to;
                 const count = item.badge ? badges[item.badge] : 0;
                 return (
                   <NavLink
                     key={item.to}
                     to={item.to}
-                    data-active={active}
-                    role="tab"
-                    aria-selected={active}
-                    className={clsx(
-                      'flex h-9 shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-[13px] transition active:scale-95',
-                      active ? 'border-transparent bg-ink font-bold text-night shadow-[0_6px_18px_-8px_rgba(224,251,252,.6)]' : 'border-line/80 bg-deep/60 text-frost',
-                    )}
+                    aria-current={active ? 'page' : undefined}
+                    className={clsx('relative flex h-[50px] min-w-0 flex-col items-center justify-center gap-[5px] px-0.5 transition active:scale-95', active ? 'text-ink' : 'text-mist')}
                   >
-                    <item.icon size={15} />
-                    {item.short ?? item.label}
-                    {count > 0 && <span className={clsx('num rounded-full px-1.5 text-[10px] font-bold leading-4', active ? 'bg-rose text-white' : 'bg-rose/90 text-white')}>{num(count)}</span>}
+                    <span className="relative">
+                      <item.icon size={18} strokeWidth={active ? 2.4 : 1.9} className={active ? 'text-iris' : undefined} />
+                      {count > 0 && <span className="num absolute -left-2.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose px-1 text-[9px] font-bold leading-none text-white">{count > 99 ? '۹۹+' : num(count)}</span>}
+                    </span>
+                    <span className={clsx('max-w-full truncate text-[11px] leading-none', active && 'font-bold')}>{item.tab ?? item.short ?? item.label}</span>
+                    {active && <span className="absolute inset-x-3 bottom-0 h-[3px] rounded-t-full bg-iris" />}
                   </NavLink>
                 );
               })}
-            </div>
+            </nav>
           </div>
         </div>
       )}
@@ -572,6 +569,28 @@ function MobileTabBar({ onSection }: { onSection: (s: NavSection) => void }) {
   const badges = useNavBadges();
   const here = locate(location.pathname);
   const press = useRef<{ timer: number; long: boolean } | null>(null);
+  const buttons = useRef<(HTMLButtonElement | null)[]>([]);
+  const activeIndex = SECTIONS.findIndex((s) => s.id === here.section.id);
+  // Liquid-glass lens that glides to the active tab and wobbles like a droplet on the way.
+  const [lens, setLens] = useState({ left: 0, placed: false, smooth: false, drop: 0 });
+  useLayoutEffect(() => {
+    const place = (animate: boolean) => {
+      const btn = buttons.current[activeIndex];
+      if (!btn) return;
+      const left = btn.offsetLeft + btn.offsetWidth / 2 - 31;
+      setLens((l) => ({ ...l, left, placed: true, drop: animate && l.placed && l.left !== left ? l.drop + 1 : l.drop }));
+    };
+    place(true);
+    const onResize = () => place(false);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [activeIndex]);
+  // Enable the glide only after the first placement so the lens doesn't fly in on load.
+  useEffect(() => {
+    if (!lens.placed || lens.smooth) return;
+    const frame = requestAnimationFrame(() => setLens((l) => ({ ...l, smooth: true })));
+    return () => cancelAnimationFrame(frame);
+  }, [lens.placed, lens.smooth]);
 
   const tap = (section: NavSection) => {
     if (section.items.length === 1) return navigate(section.items[0].to);
@@ -585,13 +604,19 @@ function MobileTabBar({ onSection }: { onSection: (s: NavSection) => void }) {
 
   return (
     <nav className="no-print fixed inset-x-0 bottom-0 z-[580] px-2.5 pb-[max(env(safe-area-inset-bottom),8px)] md:hidden" aria-label="بخش‌های اصلی">
-      <div className="tabbar mx-auto grid h-[66px] max-w-md grid-cols-5 px-1">
-        {SECTIONS.map((section) => {
+      <div className="tabbar relative mx-auto grid h-[66px] max-w-md grid-cols-5 px-1">
+        <span
+          aria-hidden
+          className={clsx('liquid-glass pointer-events-none absolute top-[6px] h-[54px] w-[62px] rounded-[20px]', lens.smooth && 'liquid-tab', lens.drop > 0 && (lens.drop % 2 ? 'drop-a' : 'drop-b'))}
+          style={{ left: lens.left, opacity: lens.placed ? 1 : 0 }}
+        />
+        {SECTIONS.map((section, index) => {
           const active = here.section.id === section.id;
           const count = section.items.reduce((sum, item) => sum + (item.badge ? badges[item.badge] ?? 0 : 0), 0);
           return (
             <button
               key={section.id}
+              ref={(el) => { buttons.current[index] = el; }}
               onPointerDown={() => {
                 const timer = window.setTimeout(() => {
                   if (press.current) press.current.long = true;
@@ -603,11 +628,11 @@ function MobileTabBar({ onSection }: { onSection: (s: NavSection) => void }) {
               onPointerLeave={() => { if (press.current) clearTimeout(press.current.timer); }}
               onClick={() => { if (press.current?.long) { press.current = null; return; } tap(section); }}
               onContextMenu={(e) => e.preventDefault()}
-              className="relative flex min-w-0 select-none flex-col items-center justify-center gap-1"
+              className="relative z-[1] flex min-w-0 select-none flex-col items-center justify-center gap-1"
               aria-current={active ? 'page' : undefined}
             >
-              <span className={clsx('relative flex h-8 w-[54px] items-center justify-center rounded-full transition-all duration-200', active ? 'tab-active text-night' : 'text-mist')}>
-                <section.icon size={21} strokeWidth={active ? 2.4 : 1.9} />
+              <span className={clsx('relative flex h-8 w-[54px] items-center justify-center rounded-full transition-colors duration-300', active ? 'text-ink' : 'text-mist')}>
+                <section.icon size={21} strokeWidth={active ? 2.4 : 1.9} className={clsx('transition-transform duration-300', active && 'scale-110')} />
                 <Badge value={count} className="absolute -top-1.5 left-1 h-[18px] min-w-[18px] border-2 border-[#1f2b30] px-1" />
               </span>
               <span className={clsx('max-w-full truncate text-[11px] leading-none', active ? 'font-bold text-ink' : 'text-mist')}>{section.tab}</span>
@@ -672,7 +697,7 @@ export function Shell({ children }: { children?: ReactNode }) {
       <div className="relative z-10 flex min-w-0 flex-1 flex-col">
         <header className="no-print relative z-[300] shrink-0 border-b border-line/50 bg-night/85 backdrop-blur-xl md:bg-night/40 md:backdrop-blur-md">
           {mobile ? (
-            <MobileTopBar onSearch={() => setPalette(true)} onMenu={() => setMenu(true)} compact={compact} />
+            <MobileTopBar onSearch={() => setPalette(true)} onMenu={() => setMenu(true)} onSection={setSectionSheet} compact={compact} />
           ) : (
             <div className="flex h-16 items-center gap-3 px-5">
               <button

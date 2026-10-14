@@ -62,29 +62,26 @@ export default function PurchaseOrdersPage() {
         { key: 'received', label: 'دریافت‌شده' }, { key: 'all', label: 'همه' },
       ]} />
       {isLoading ? <Spinner /> : list.length === 0 ? <Card><Empty icon={Truck} title="سفارش خریدی وجود ندارد" /></Card> : (<>
-        <div className="space-y-2.5 md:hidden">
+        <div className="space-y-2 md:hidden">
           {list.map((p) => {
             const received = p.qtyTotal ? (p.qtyReceived / p.qtyTotal) * 100 : 0;
             return (
               <ListCard key={p.id} to={`/scm/purchase-orders/${p.id}`} accent={p.delayed ? '#FF499E' : undefined}>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="truncate text-[15px] font-bold text-ink">{p.supplierName}</div>
-                    <div className="ltr mt-0.5 text-right text-xs font-medium text-mist">{p.number}</div>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1.5">{p.delayed && <AlertTriangle size={15} className="text-rose" />}<PoStatusPill status={p.status} /></div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    {p.delayed && <AlertTriangle size={14} className="shrink-0 text-rose" />}
+                    <span className="truncate text-[14.5px] font-bold text-ink">{p.supplierName}</span>
+                  </span>
+                  <PoStatusPill status={p.status} />
                 </div>
-                <div className="mt-3 flex items-end justify-between gap-3">
-                  <div className="num text-[17px] font-extrabold text-ink">{compactMoney(p.total)} <span className="text-[11px] font-medium text-mist">{settings.company.currency}</span></div>
-                  <div className={clsx('text-left text-[11px]', p.delayed ? 'text-rose' : 'text-mist')}>
-                    تحویل {date(p.expectedAt)}{p.delayed && <div>{num(p.delayDays)} روز تأخیر</div>}
-                  </div>
+                <div className={clsx('mt-0.5 truncate text-[11.5px]', p.delayed ? 'text-rose' : 'text-mist')}>
+                  <span className="ltr">{p.number}</span> · تحویل {date(p.expectedAt)}{p.delayed ? ` (${num(p.delayDays)} روز تأخیر)` : ''}
                 </div>
-                <div className="mt-3 border-t border-line/50 pt-3">
-                  <div className="mb-1.5 flex justify-between text-[11px] text-mist"><span>دریافت کالا</span><span className="num">{num(received)}٪</span></div>
-                  <Progress value={received} color="#0FD69D" />
+                <div className="mt-2 flex items-center gap-2.5">
+                  <span className="num shrink-0 text-[15px] font-extrabold text-ink">{compactMoney(p.total)}</span>
+                  <Progress className="flex-1" value={received} color="#0FD69D" />
+                  <span className="num shrink-0 text-[11px] text-mist">دریافت {num(received)}٪</span>
                 </div>
-                {(p.shippingMethod || p.trackingNo) && <div className="mt-2 text-[11px] text-mist">{p.shippingMethod}{p.trackingNo && <span className="ltr mr-1">{p.trackingNo}</span>}</div>}
               </ListCard>
             );
           })}

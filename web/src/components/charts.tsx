@@ -164,3 +164,21 @@ export function ScoreMeter({ score, hot = 70, warm = 40, compact }: { score: num
     </div>
   );
 }
+
+/** Circular percentage gauge for a lead's score (0–100) — reads at a glance on phone cards. */
+export function ScoreRing({ score, hot = 70, warm = 40, size = 44 }: { score: number; hot?: number; warm?: number; size?: number }) {
+  const color = score >= hot ? '#FF499E' : score >= warm ? '#F5B85A' : '#9DB4C0';
+  const stroke = 3.5;
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const value = Math.max(0, Math.min(100, score));
+  return (
+    <span className="relative inline-flex shrink-0 items-center justify-center" style={{ width: size, height: size }} title={`امتیاز ${num(value)} از ۱۰۰`}>
+      <svg width={size} height={size} className="-rotate-90" aria-hidden>
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#E0FBFC" strokeOpacity={0.09} strokeWidth={stroke} />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke} strokeLinecap="round" strokeDasharray={`${(value / 100) * c} ${c}`} />
+      </svg>
+      <span className="num absolute text-[11.5px] font-extrabold leading-none" style={{ color }}>{num(value)}٪</span>
+    </span>
+  );
+}

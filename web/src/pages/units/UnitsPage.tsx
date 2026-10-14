@@ -47,23 +47,17 @@ export default function UnitsPage() {
         </Filters>
       </div>
       {isLoading ? <Spinner /> : list.length === 0 ? <Card><Empty icon={Cpu} title="دستگاهی یافت نشد" /></Card> : (<>
-        <div className="space-y-2.5 md:hidden">
+        <div className="space-y-2 md:hidden">
           {list.map((u) => (
             <ListCard key={u.id} to={`/units/${u.serial}`} accent={UNIT_STATUS[u.status]?.color}>
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="ltr text-right font-mono text-[15px] font-bold text-ink">{u.serial}</div>
-                  <div className="mt-0.5 truncate text-xs text-mist">{u.itemName}</div>
-                </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="ltr truncate font-mono text-[14px] font-bold text-ink">{u.serial}</span>
                 <UnitStatusPill status={u.status} />
               </div>
-              <div className="mt-3 grid grid-cols-2 gap-3 rounded-xl bg-deep/60 p-2.5 text-xs">
-                <div className="min-w-0"><div className="text-[11px] text-mist">محل / مشتری</div><div className="mt-0.5 truncate text-ink">{u.contactName ?? u.warehouseName ?? '—'}</div></div>
-                <div className="min-w-0"><div className="text-[11px] text-mist">HW / FW</div><div className="ltr mt-0.5 truncate text-right text-ink">{u.hwRev || '—'} / {u.fwVersion || '—'}</div></div>
-              </div>
-              <div className="mt-2.5 flex items-center justify-between gap-2 text-[11px] text-mist">
-                <span>ساخت {date(u.builtAt)}{u.orderNumber && <span className="ltr mr-1">· {u.orderNumber}</span>}</span>
-                {['installed', 'shipped', 'in_repair'].includes(u.status) && <WarrantyBadge until={u.warrantyUntil} />}
+              <div className="mt-0.5 truncate text-[11.5px] text-mist">{u.itemName} · {u.contactName ?? u.warehouseName ?? '—'}</div>
+              <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px] text-mist">
+                <span className="ltr truncate">{u.hwRev || '—'} / {u.fwVersion || '—'}</span>
+                {['installed', 'shipped', 'in_repair'].includes(u.status) ? <WarrantyBadge until={u.warrantyUntil} /> : <span>ساخت {date(u.builtAt)}</span>}
               </div>
             </ListCard>
           ))}

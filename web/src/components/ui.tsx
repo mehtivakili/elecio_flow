@@ -95,23 +95,24 @@ export interface FabAction { label: string; icon: Icon; onClick: () => void }
  * primary "create" action — a floating button on phones, a glow button on desktop.
  */
 export function PageHeader({
-  title, subtitle, icon: IconCmp, actions, children, fab,
-}: { title: ReactNode; subtitle?: ReactNode; icon?: Icon; actions?: ReactNode; children?: ReactNode; fab?: FabAction }) {
+  title, subtitle, icon: IconCmp, actions, children, fab, aside,
+}: { title: ReactNode; subtitle?: ReactNode; icon?: Icon; actions?: ReactNode; children?: ReactNode; fab?: FabAction; aside?: ReactNode }) {
   return (
-    <div className="mb-4 flex flex-col gap-3 md:mb-6 md:flex-row md:flex-wrap md:items-end md:justify-between md:gap-4">
+    <div className="mb-3 flex flex-col gap-2.5 md:mb-6 md:flex-row md:flex-wrap md:items-end md:justify-between md:gap-4">
       <div className="flex min-w-0 items-center gap-3">
         {IconCmp && (
           <span className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/[0.06] bg-gradient-to-br from-iris/30 to-slate/20 text-ink md:flex">
             <IconCmp size={21} />
           </span>
         )}
-        <div className="min-w-0">
-          <h1 className="page-title text-[21px] font-extrabold leading-8 text-ink md:truncate md:text-xl md:font-bold">{title}</h1>
-          {subtitle && <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-mist md:mt-1 md:line-clamp-none md:text-sm">{subtitle}</p>}
+        <div className="min-w-0 flex-1">
+          <h1 className="page-title text-[19px] font-extrabold leading-7 text-ink md:truncate md:text-xl md:font-bold">{title}</h1>
+          {subtitle && <p className="mt-0.5 line-clamp-1 text-xs leading-5 text-mist md:mt-1 md:line-clamp-none md:text-sm">{subtitle}</p>}
         </div>
+        {aside && <div className="shrink-0">{aside}</div>}
       </div>
       {(actions || fab) && (
-        <div className={clsx('page-actions no-scrollbar -mx-3.5 flex items-center gap-2 overflow-x-auto px-3.5 md:mx-0 md:flex-wrap md:overflow-visible md:px-0', !actions && 'hidden md:flex')}>
+        <div className={clsx('page-actions flex flex-wrap items-center gap-2', !actions && 'hidden md:flex')}>
           {actions}
           {fab && <Button variant="glow" icon={fab.icon} onClick={fab.onClick} className="hidden md:inline-flex">{fab.label}</Button>}
         </div>
@@ -245,23 +246,24 @@ export function Stat({
     <Tag
       onClick={onClick}
       className={clsx(
-        'glass group relative flex min-w-0 flex-col gap-2 overflow-hidden p-3.5 text-right transition md:gap-3 md:p-4',
+        'glass group relative flex min-w-0 flex-col gap-1 overflow-hidden px-3 py-2.5 text-right transition md:gap-3 md:p-4',
         onClick && 'hover:-translate-y-0.5 hover:border-iris/30 hover:shadow-glow active:scale-[.98]',
       )}
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="truncate text-xs font-medium text-mist">{label}</span>
+        <span className="truncate text-[11.5px] font-medium text-mist md:text-xs">{label}</span>
         {IconCmp && (
-          <span className={clsx('flex h-7 w-7 shrink-0 items-center justify-center rounded-lg md:h-8 md:w-8', tones[tone])}>
-            <IconCmp size={15} />
+          <span className={clsx('flex h-6 w-6 shrink-0 items-center justify-center rounded-md md:h-8 md:w-8 md:rounded-lg', tones[tone])}>
+            <IconCmp size={14} />
           </span>
         )}
       </div>
-      <div className="flex items-end gap-2">
-        <span className="num truncate text-[22px] font-bold leading-none text-ink md:text-2xl">{value}</span>
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="num shrink-0 text-lg font-bold leading-tight text-ink md:text-2xl md:leading-none">{value}</span>
         {alert && <Dot color="#FF499E" pulse />}
+        {hint && <span className="min-w-0 truncate text-[11px] text-mist md:hidden">{hint}</span>}
       </div>
-      {hint && <div className="truncate text-xs text-mist">{hint}</div>}
+      {hint && <div className="hidden truncate text-xs text-mist md:block">{hint}</div>}
     </Tag>
   );
 }
@@ -271,8 +273,19 @@ export function Stat({
 export function Tabs<T extends string>({
   tabs, value, onChange, className,
 }: { tabs: { key: T; label: string; count?: number; icon?: Icon }[]; value: T; onChange: (v: T) => void; className?: string }) {
+  const mobile = useIsMobile();
+  const cols = tabs.length <= 4 ? tabs.length : 3;
   return (
-    <div className={clsx('no-scrollbar flex max-w-full gap-1 overflow-x-auto rounded-xl border border-line/70 bg-deep/50 p-1', className)} role="tablist">
+    <div
+      className={clsx(
+        'max-w-full gap-1 rounded-xl border border-line/70 bg-deep/50 p-1',
+        mobile ? 'grid' : 'no-scrollbar flex overflow-x-auto',
+        className,
+        mobile && '!w-full',
+      )}
+      style={mobile ? { gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` } : undefined}
+      role="tablist"
+    >
       {tabs.map((t) => (
         <button
           key={t.key}
@@ -280,14 +293,15 @@ export function Tabs<T extends string>({
           aria-selected={value === t.key}
           onClick={() => onChange(t.key)}
           className={clsx(
-            'flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-sm transition md:py-1.5',
+            'flex items-center gap-1.5 whitespace-nowrap rounded-lg transition',
+            mobile ? 'min-w-0 justify-center gap-1 px-1 py-2 text-[12.5px]' : 'shrink-0 px-3 py-1.5 text-sm',
             value === t.key ? 'nav-active font-semibold' : 'text-mist hover:bg-ink/[0.05] hover:text-ink',
           )}
         >
-          {t.icon && <t.icon size={15} />}
-          {t.label}
+          {t.icon && <t.icon size={15} className="shrink-0" />}
+          <span className="truncate">{t.label}</span>
           {t.count !== undefined && (
-            <span className={clsx('num rounded-full px-1.5 text-[11px]', value === t.key ? 'bg-night/20' : 'bg-ink/10')}>{num(t.count)}</span>
+            <span className={clsx('num shrink-0 text-[11px]', mobile ? 'opacity-70' : clsx('rounded-full px-1.5', value === t.key ? 'bg-night/20' : 'bg-ink/10'))}>{num(t.count)}</span>
           )}
         </button>
       ))}
@@ -581,41 +595,64 @@ export function Metric({ label, children, className }: { label: string; children
   );
 }
 
+/** Which board column to show on phones: the chosen one, else the first with cards. */
+export function pickStage(stages: { key: string; count: number }[], chosen: string | null) {
+  if (chosen && stages.some((s) => s.key === chosen)) return chosen;
+  return (stages.find((s) => s.count > 0) ?? stages[0])?.key ?? null;
+}
+
 /**
- * Phone-only row of stage chips above a kanban board: shows each column's count,
- * highlights the column in view and jumps to a column on tap. Columns opt in
- * with `data-col={key}`.
+ * Phones don't get sideways kanban boards: this wrapping set of stage chips picks
+ * one column, and the page shows that column as a normal vertical list.
  */
-export function BoardJump({ stages }: { stages: { key: string; label: string; count: number; color?: string }[] }) {
-  const [active, setActive] = useState<string | undefined>(stages[0]?.key);
-  const keys = stages.map((s) => s.key).join('|');
-  useEffect(() => {
-    const cols = keys.split('|').map((k) => document.querySelector<HTMLElement>(`[data-col="${k}"]`)).filter(Boolean) as HTMLElement[];
-    if (!cols.length) return;
-    const io = new IntersectionObserver((entries) => {
-      const seen = entries.filter((e) => e.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
-      const key = seen ? (seen.target as HTMLElement).dataset.col : undefined;
-      if (key) setActive(key);
-    }, { threshold: [0.55] });
-    cols.forEach((c) => io.observe(c));
-    return () => io.disconnect();
-  }, [keys]);
-  useEffect(() => {
-    document.querySelector(`[data-jump="${active}"]`)?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
-  }, [active]);
+export function StageSwitch({ stages, value, onChange }: {
+  stages: { key: string; label: string; count: number; color?: string }[]; value: string | null; onChange: (key: string) => void;
+}) {
   return (
-    <div className="no-scrollbar -mx-3.5 mb-3 flex gap-1.5 overflow-x-auto px-3.5 md:hidden">
-      {stages.map((s) => (
+    <div className="mb-3 flex flex-wrap gap-1.5 md:hidden" role="tablist" aria-label="مراحل">
+      {stages.map((s) => {
+        const active = value === s.key;
+        return (
+          <button
+            key={s.key}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange(s.key)}
+            className={clsx(
+              'flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[12.5px] transition active:scale-95',
+              active ? 'border-transparent bg-ink font-bold text-night' : 'border-line/70 bg-deep/50 text-frost',
+              !s.count && !active && 'opacity-55',
+            )}
+          >
+            <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: s.color ?? '#9DB4C0' }} />
+            {s.label}
+            <span className={clsx('num text-[11px]', active ? 'text-night/70' : 'text-mist')}>{num(s.count)}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Compact icon-only segmented switch (e.g. card / list) that fits beside a title. */
+export function IconToggle<T extends string>({ value, onChange, options }: {
+  value: T; onChange: (v: T) => void; options: { key: T; icon: Icon; label: string }[];
+}) {
+  return (
+    <div className="flex rounded-xl border border-line/70 bg-deep/60 p-0.5" role="tablist">
+      {options.map((o) => (
         <button
-          key={s.key}
+          key={o.key}
           type="button"
-          data-jump={s.key}
-          onClick={() => document.querySelector(`[data-col="${s.key}"]`)?.scrollIntoView({ inline: 'start', block: 'nearest', behavior: 'smooth' })}
-          className={clsx('flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs transition', active === s.key ? 'border-transparent bg-ink/[0.12] font-bold text-ink' : 'border-line/70 text-mist', !s.count && 'opacity-60')}
+          role="tab"
+          aria-selected={value === o.key}
+          aria-label={o.label}
+          title={o.label}
+          onClick={() => onChange(o.key)}
+          className={clsx('flex h-8 w-9 items-center justify-center rounded-[10px] transition active:scale-95', value === o.key ? 'bg-iris text-night shadow-sm' : 'text-mist hover:text-ink')}
         >
-          <span className="h-2 w-2 rounded-full" style={{ background: s.color ?? '#9DB4C0' }} />
-          {s.label}
-          <span className="num">{num(s.count)}</span>
+          <o.icon size={16} />
         </button>
       ))}
     </div>

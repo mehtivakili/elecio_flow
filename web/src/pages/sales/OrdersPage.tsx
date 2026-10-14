@@ -4,7 +4,7 @@ import { ShoppingCart, FilePlus2, Rows3, Columns3, AlertTriangle } from 'lucide-
 import clsx from 'clsx';
 import { useApi } from '../../lib/hooks';
 import { useSession } from '../../lib/session';
-import { BoardJump, Button, Card, Empty, Filters, ListCard, PageHeader, Progress, SearchBox, Select, Spinner, Stat, Tabs } from '../../components/ui';
+import { Button, pickStage, StageSwitch, Card, Empty, Filters, ListCard, PageHeader, Progress, SearchBox, Select, Spinner, Stat, Tabs } from '../../components/ui';
 import { OrderStagePill, PriorityPill } from '../../components/domain';
 import { OrderFormModal } from '../../components/orders';
 import { compactMoney, date, money, num, relative } from '../../lib/format';
@@ -19,6 +19,7 @@ export default function OrdersPage() {
   const [view, setView] = useState<'table' | 'board'>('table');
   const [search, setSearch] = useState('');
   const [creating, setCreating] = useState<string | null | false>(false);
+  const [boardStage, setBoardStage] = useState<string | null>(null);
   const stage = params.get('stage') ?? '';
   useEffect(() => {
     if (params.get('new') === '1') {
@@ -33,6 +34,8 @@ export default function OrdersPage() {
   const open = data.filter((o) => o.status === 'open');
   const cur = settings.company.currency;
   const boardStages = settings.orderStages.filter((s) => !s.final);
+  const boardCounts = boardStages.map((s) => ({ key: s.key, label: s.label, color: s.color, count: orders.filter((o) => o.stage === s.key && o.status === 'open').length }));
+  const shownStage = pickStage(boardCounts, boardStage);
 
   return (
     <div>
@@ -70,41 +73,33 @@ export default function OrdersPage() {
       </div>
 
       {isLoading ? <Spinner /> : orders.length === 0 ? <Card><Empty icon={ShoppingCart} title="سفارشی یافت نشد" /></Card> : view === 'table' ? (<>
-        <div className="space-y-2.5 md:hidden">
+        <div className="space-y-2 md:hidden">
           {orders.map((o) => {
             const stageDef = settings.orderStages.find((s) => s.key === o.stage);
-            const paidPct = o.total ? (o.paid / o.total) * 100 : 0;
+            const paidPct = o.total ? Math.round((o.paid / o.total) * 100) : 0;
+            const urgent = ['high', 'urgent'].includes(o.priority);
             return (
               <ListCard key={o.id} to={`/sales/orders/${o.id}`} accent={o.status === 'cancelled' ? '#FF499E' : stageDef?.color}>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="truncate text-[15px] font-bold text-ink">{o.contactName}</div>
-                    <div className="ltr mt-0.5 text-right text-xs font-medium text-mist">{o.number}</div>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1.5">{o.late && <AlertTriangle size={15} className="text-rose" />}<OrderStagePill stage={o.stage} status={o.status} /></div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    {o.late && <AlertTriangle size={14} className="shrink-0 text-rose" />}
+                    <span className="truncate text-[14.5px] font-bold text-ink">{o.contactName}</span>
+                  </span>
+                  <OrderStagePill stage={o.stage} status={o.status} />
                 </div>
-                {o.summary && <p className="mt-2 line-clamp-1 text-xs text-frost/80">{o.summary}</p>}
-                <div className="mt-3 flex items-end justify-between gap-3">
-                  <div>
-                    <div className="num text-[17px] font-extrabold text-ink">{compactMoney(o.total)} <span className="text-[11px] font-medium text-mist">{cur}</span></div>
-                    <div className="mt-0.5 text-[11px] text-mist">{o.fulfillment === 'mto' ? 'تولید سفارشی' : 'از موجودی'}</div>
-                  </div>
-                  <div className="flex flex-col items-end gap-1 text-[11px]">
-                    <PriorityPill priority={o.priority} />
-                    {o.status === 'open' && <span className={clsx(o.stageLate ? 'text-rose' : 'text-mist')}>{num(o.daysInStage, 1)} روز در مرحله</span>}
-                  </div>
+                <div className="mt-0.5 truncate text-[11.5px] text-mist"><span className="ltr">{o.number}</span>{o.summary ? ` · ${o.summary}` : ''}</div>
+                <div className="mt-2 flex items-center gap-2.5">
+                  <span className="num shrink-0 text-[15px] font-extrabold text-ink">{compactMoney(o.total)}</span>
+                  <Progress className="flex-1" value={o.status === 'done' ? 100 : o.progress} color={o.late ? '#FF499E' : '#779BE7'} />
+                  <span className={clsx('num shrink-0 text-[11px]', paidPct >= 100 ? 'text-mint' : 'text-mist')}>پرداخت {num(paidPct)}٪</span>
                 </div>
-                <div className="mt-3 grid grid-cols-2 gap-3 border-t border-line/50 pt-3">
-                  <div>
-                    <div className="mb-1.5 flex justify-between text-[11px] text-mist"><span>پیشرفت</span><span className="num">{num(o.status === 'done' ? 100 : o.progress)}٪</span></div>
-                    <Progress value={o.status === 'done' ? 100 : o.progress} color={o.late ? '#FF499E' : '#779BE7'} />
+                {o.status === 'open' && (urgent || o.stageLate || o.promiseLate) && (
+                  <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
+                    {urgent && <PriorityPill priority={o.priority} />}
+                    {o.stageLate && <span className="text-rose">{num(o.daysInStage, 1)} روز در این مرحله</span>}
+                    {o.promiseLate && o.promisedAt && <span className="text-rose">موعد تحویل {date(o.promisedAt)}</span>}
                   </div>
-                  <div>
-                    <div className="mb-1.5 flex justify-between text-[11px] text-mist"><span>پرداخت</span><span className="num">{num(paidPct)}٪</span></div>
-                    <Progress value={paidPct} color="#0FD69D" />
-                  </div>
-                </div>
-                {o.promisedAt && <div className={clsx('mt-2.5 text-[11px]', o.promiseLate ? 'text-rose' : 'text-mist')}>تحویل تعهدی: {date(o.promisedAt)}</div>}
+                )}
               </ListCard>
             );
           })}
@@ -136,12 +131,12 @@ export default function OrdersPage() {
           </table>
         </Card>
       </>) : (<>
-        <BoardJump stages={boardStages.map((s) => ({ key: s.key, label: s.label, color: s.color, count: orders.filter((o) => o.stage === s.key && o.status === 'open').length }))} />
+        <StageSwitch stages={boardCounts} value={shownStage} onChange={setBoardStage} />
         <div className="board flex gap-4 overflow-x-auto pb-3">
           {boardStages.map((s) => {
             const col = orders.filter((o) => o.stage === s.key && o.status === 'open');
             return (
-              <div key={s.key} data-col={s.key} className="glass w-[260px] shrink-0">
+              <div key={s.key} className={clsx('glass w-[260px] shrink-0', s.key !== shownStage && 'max-md:hidden')}>
                 <div className="flex items-center justify-between border-b border-line/60 px-4 py-3" style={{ boxShadow: `inset 0 3px 0 ${s.color}` }}>
                   <span className="text-sm font-semibold">{s.label}</span>
                   <span className="num text-xs text-mist">{num(col.length)} · {compactMoney(col.reduce((a, o) => a + o.total, 0))}</span>

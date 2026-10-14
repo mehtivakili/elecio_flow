@@ -76,7 +76,7 @@ export function OrderFormModal({ open, onClose, order, lines: initialLines, defa
         <div className="flex items-end pb-2 md:col-span-3"><Toggle checked={f.needsInstallation} onChange={(v) => setF({ ...f, needsInstallation: v })} label="شامل نصب و راه‌اندازی در محل مشتری" /></div>
       </div>
 
-      <div className="mt-6 overflow-x-auto rounded-2xl border border-line/70">
+      <div className="mt-5 overflow-x-auto rounded-2xl border-line/70 md:mt-6 md:border">
         <table className="tbl">
           <thead><tr><th className="w-[38%]">کالا / خدمت</th><th>تعداد</th><th>قیمت واحد</th><th>تخفیف ٪</th><th>جمع</th><th /></tr></thead>
           <tbody>

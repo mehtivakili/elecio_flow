@@ -46,26 +46,25 @@ export default function StockPage({ view = 'stock' }: { view?: 'stock' | 'moves'
       </div>
 
       {view === 'stock' && tab === 'levels' && (isLoading ? <Spinner /> : levels.length === 0 ? <Card><Empty title="موجودی ثبت نشده" /></Card> : (<>
-        <div className="space-y-2.5 md:hidden">
+        <div className="space-y-2 md:hidden">
           {levels.map((s) => {
             const free = s.qty - s.reserved;
             const low = free <= s.reorderPoint && s.reorderPoint > 0;
             return (
               <ListCard key={`${s.itemId}-${s.warehouseId}`} accent={low ? '#FF499E' : undefined}>
-                <div className="flex items-start justify-between gap-3">
-                  <Link to={`/inventory/items/${s.itemId}`} className="min-w-0">
-                    <div className="truncate text-[15px] font-bold text-ink">{s.name}</div>
-                    <div className="mt-0.5 text-[11px] text-mist"><span className="ltr">{s.sku}</span> · {s.warehouseName}</div>
+                <div className="flex items-center gap-2">
+                  <Link to={`/inventory/items/${s.itemId}`} className="min-w-0 flex-1">
+                    <div className="truncate text-[14.5px] font-bold text-ink">{s.name}</div>
+                    <div className="truncate text-[11px] text-mist"><span className="ltr">{s.sku}</span> · {s.warehouseName}</div>
                   </Link>
-                  <Button size="sm" variant="outline" icon={ClipboardCheck} onClick={() => setAdjusting(s)}>اصلاح</Button>
+                  <button type="button" onClick={() => setAdjusting(s)} className="icon-chip text-iris" aria-label="اصلاح شمارش"><ClipboardCheck size={16} /></button>
                 </div>
-                <div className="mt-3 grid grid-cols-4 gap-1 rounded-xl bg-deep/60 px-1 py-2.5 text-center">
-                  <div><div className="text-[11px] text-mist">موجودی</div><div className="num mt-0.5 font-bold text-ink">{num(s.qty)}</div></div>
-                  <div><div className="text-[11px] text-mist">رزرو</div><div className="num mt-0.5 font-bold text-amber">{s.reserved ? num(s.reserved) : '—'}</div></div>
-                  <div><div className="text-[11px] text-mist">آزاد</div><div className={clsx('num mt-0.5 font-bold', low ? 'text-rose' : 'text-mint')}>{num(free)}</div></div>
-                  <div><div className="text-[11px] text-mist">واحد</div><div className="mt-0.5 truncate font-bold text-frost">{s.unit}</div></div>
+                <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px]">
+                  <span className="mini-stat">موجودی<b>{num(s.qty)}</b> <span className="text-[10.5px]">{s.unit}</span></span>
+                  <span className="mini-stat">آزاد<b className={low ? '!text-rose' : '!text-mint'}>{num(free)}</b></span>
+                  {s.reserved ? <span className="mini-stat">رزرو<b className="!text-amber">{num(s.reserved)}</b></span> : null}
+                  <span className="mini-stat mr-auto">ارزش<b>{money(s.qty * s.cost)}</b></span>
                 </div>
-                <div className="mt-2 text-[11px] text-mist">ارزش: <b className="num font-semibold text-frost">{money(s.qty * s.cost)}</b></div>
               </ListCard>
             );
           })}
@@ -88,29 +87,25 @@ export default function StockPage({ view = 'stock' }: { view?: 'stock' | 'moves'
       </>))}
 
       {view === 'moves' && filteredMoves.length > 0 && (
-        <div className="space-y-2.5 md:hidden">
+        <div className="space-y-2 md:hidden">
           {filteredMoves.map((m) => {
             const inbound = m.toWh && !m.fromWh, outbound = m.fromWh && !m.toWh;
             const color = inbound ? '#0FD69D' : outbound ? '#BE7C38' : '#779BE7';
             const refLink = m.refType === 'po' ? `/scm/purchase-orders/${m.refId}` : m.refType === 'order' ? `/sales/orders/${m.refId}` : m.refType === 'work_order' ? `/production/work-orders/${m.refId}` : null;
             return (
               <ListCard key={m.id} accent={color}>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <Link to={`/inventory/items/${m.itemId}`} className="block truncate text-[15px] font-bold text-ink">{m.itemName}</Link>
-                    <div className="mt-0.5 text-[11px] text-mist">{dateTime(m.at)} · {m.userName}</div>
-                  </div>
-                  <div className={clsx('num shrink-0 text-lg font-extrabold', inbound ? 'text-mint' : outbound ? 'text-amber' : 'text-ink')}>{inbound ? '+' : outbound ? '−' : ''}{num(m.qty)}</div>
+                <div className="flex items-center justify-between gap-2">
+                  <Link to={`/inventory/items/${m.itemId}`} className="min-w-0 truncate text-[14.5px] font-bold text-ink">{m.itemName}</Link>
+                  <span className={clsx('num shrink-0 text-base font-extrabold', inbound ? 'text-mint' : outbound ? 'text-amber' : 'text-ink')}>{inbound ? '+' : outbound ? '−' : ''}{num(m.qty)}</span>
                 </div>
-                <div className="mt-2.5 flex flex-wrap items-center gap-2 text-xs">
+                <div className="mt-1 flex items-center gap-1.5 text-[11.5px]">
                   <Pill color={color}>{MOVE_KINDS[m.kind] ?? m.kind}</Pill>
-                  <span className="text-frost">{m.fromName ?? '—'}</span>
-                  <span className="text-mist">←</span>
-                  <span className="text-frost">{m.toName ?? '—'}</span>
+                  <span className="min-w-0 truncate text-frost">{m.fromName ?? '—'} ← {m.toName ?? '—'}</span>
+                  <span className="mr-auto shrink-0 text-mist">{dateTime(m.at)}</span>
                 </div>
                 {m.note && (refLink
-                  ? <Link to={refLink} className="mt-2 block truncate text-xs text-iris">{m.note}</Link>
-                  : <p className="mt-2 line-clamp-2 text-xs text-mist">{m.note}</p>)}
+                  ? <Link to={refLink} className="mt-1 block truncate text-[11.5px] text-iris">{m.note}</Link>
+                  : <p className="mt-1 truncate text-[11.5px] text-mist">{m.note} · {m.userName}</p>)}
               </ListCard>
             );
           })}

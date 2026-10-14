@@ -41,30 +41,28 @@ export default function ItemsPage() {
         <SearchBox value={search} onChange={setSearch} placeholder="نام یا کد کالا…" className="min-w-0 flex-1 md:min-w-[220px]" />
       </div>
       {isLoading ? <Spinner /> : list.length === 0 ? <Card><Empty icon={Boxes} title="کالایی یافت نشد" /></Card> : (<>
-        <div className="space-y-2.5 md:hidden">
+        <div className="space-y-2 md:hidden">
           {list.map((i) => (
             <ListCard key={i.id} to={`/inventory/items/${i.id}`} accent={i.needsReorder ? '#FF499E' : undefined} className={clsx(!i.active && 'opacity-50')}>
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5 text-[15px] font-bold text-ink"><span className="truncate">{i.name}</span>{i.bomCount ? <Layers size={13} className="shrink-0 text-mist" /> : null}</div>
-                  <div className="ltr mt-0.5 text-right text-[11px] text-mist">{i.sku}</div>
-                </div>
-                <div className="flex shrink-0 items-center gap-1">
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <span className="truncate text-[14.5px] font-bold text-ink">{i.name}</span>
+                  {i.bomCount ? <Layers size={12} className="shrink-0 text-mist" /> : null}
+                </span>
+                <span className="flex shrink-0 items-center gap-1">
                   {i.serialized ? <Pill color="#779BE7">سریالی</Pill> : null}
                   <Pill color={i.kind === 'product' ? '#B48CF2' : i.kind === 'component' ? '#5EC8E5' : '#9DB4C0'}>{i.kind === 'product' ? 'محصول' : i.kind === 'component' ? 'قطعه' : 'خدمت'}</Pill>
-                </div>
+                </span>
               </div>
-              {i.kind !== 'service' && (
-                <div className="mt-3 grid grid-cols-4 gap-1 rounded-xl bg-deep/60 px-1 py-2.5 text-center">
-                  <div><div className="text-[11px] text-mist">موجودی</div><div className="num mt-0.5 font-bold text-ink">{num(i.onHand)}</div></div>
-                  <div><div className="text-[11px] text-mist">رزرو</div><div className="num mt-0.5 font-bold text-amber">{i.reserved ? num(i.reserved) : '—'}</div></div>
-                  <div><div className="text-[11px] text-mist">آزاد</div><div className={clsx('num mt-0.5 flex items-center justify-center gap-1 font-bold', i.needsReorder ? 'text-rose' : 'text-mint')}>{num(i.available)}{i.needsReorder && <AlertTriangle size={12} />}</div></div>
-                  <div><div className="text-[11px] text-mist">در راه</div><div className="num mt-0.5 font-bold text-sky">{i.incoming ? num(i.incoming) : '—'}</div></div>
-                </div>
-              )}
-              <div className="mt-2.5 flex justify-between gap-2 text-[11px] text-mist">
-                <span>بهای تمام‌شده <b className="num font-semibold text-frost">{money(i.cost)}</b></span>
-                {i.kind !== 'component' && <span>فروش <b className="num font-semibold text-frost">{money(i.price)}</b></span>}
+              <div className="ltr mt-0.5 text-right text-[11px] text-mist">{i.sku}</div>
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px]">
+                {i.kind !== 'service' && <>
+                  <span className="mini-stat">موجودی<b>{num(i.onHand)}</b></span>
+                  <span className={clsx('mini-stat', i.needsReorder && '!text-rose')}>آزاد<b className={clsx(i.needsReorder && '!text-rose')}>{num(i.available)}</b>{i.needsReorder && <AlertTriangle size={11} className="mr-1 inline" />}</span>
+                  {i.reserved ? <span className="mini-stat">رزرو<b className="!text-amber">{num(i.reserved)}</b></span> : null}
+                  {i.incoming ? <span className="mini-stat">در راه<b className="!text-sky">{num(i.incoming)}</b></span> : null}
+                </>}
+                <span className="mini-stat mr-auto">{i.kind === 'component' ? 'بها' : 'فروش'}<b>{money(i.kind === 'component' ? i.cost : i.price)}</b></span>
               </div>
             </ListCard>
           ))}

@@ -5,7 +5,7 @@ import clsx from 'clsx';
 import { post } from '../../lib/api';
 import { useAction, useApi } from '../../lib/hooks';
 import { useSession } from '../../lib/session';
-import { BoardJump, Button, Card, Field, Input, Modal, PageHeader, Progress, Select, Spinner, Tabs, Textarea } from '../../components/ui';
+import { Button, pickStage, StageSwitch, Card, Field, Input, Modal, PageHeader, Progress, Select, Spinner, Tabs, Textarea } from '../../components/ui';
 import { DateInput } from '../../components/inputs';
 import { ItemPicker, PriorityPill, UserPicker, WoStagePill } from '../../components/domain';
 import { date, num, relative } from '../../lib/format';
@@ -20,6 +20,9 @@ export default function WorkOrdersPage() {
   useEffect(() => { if (params.get('new') === '1') { setCreating(true); params.delete('new'); setParams(params, { replace: true }); } }, [params, setParams]);
   const open = data.filter((w) => w.status === 'open');
   const stages = settings.workOrderStages.filter((s) => !s.final);
+  const [boardStage, setBoardStage] = useState<string | null>(null);
+  const stageCounts = stages.map((s) => ({ key: s.key, label: s.label, color: s.color, count: open.filter((w) => w.stage === s.key).length }));
+  const shownStage = pickStage(stageCounts, boardStage);
 
   return (
     <div>
@@ -29,17 +32,17 @@ export default function WorkOrdersPage() {
         </>}
         fab={{ label: 'دستور تولید', icon: Plus, onClick: () => setCreating(true) }} />
       {isLoading ? <Spinner /> : tab === 'board' ? (<>
-        <BoardJump stages={stages.map((s) => ({ key: s.key, label: s.label, color: s.color, count: open.filter((w) => w.stage === s.key).length }))} />
+        <StageSwitch stages={stageCounts} value={shownStage} onChange={setBoardStage} />
         <div className="board flex gap-4 overflow-x-auto pb-3">
           {stages.map((s) => {
             const col = open.filter((w) => w.stage === s.key);
             return (
-              <div key={s.key} data-col={s.key} className="glass w-[250px] shrink-0">
+              <div key={s.key} className={clsx('glass w-[250px] shrink-0', s.key !== shownStage && 'max-md:hidden')}>
                 <div className="flex items-center justify-between border-b border-line/60 px-4 py-3" style={{ boxShadow: `inset 0 3px 0 ${s.color}` }}>
                   <span className="text-sm font-semibold">{s.label}</span>
                   <span className="num text-xs text-mist">{num(col.reduce((a, w) => a + w.qty, 0))} دستگاه</span>
                 </div>
-                <div className="flex min-h-[160px] flex-col gap-2 p-3">
+                <div className="flex min-h-[90px] flex-col gap-2 p-2.5 md:min-h-[200px] md:p-3">
                   {col.map((w) => (
                     <Link key={w.id} to={`/production/work-orders/${w.id}`} className={clsx('rounded-xl border bg-deep/70 p-3 transition hover:border-iris/40', w.late ? 'border-rose/40' : 'border-white/[0.06]')}>
                       <div className="flex items-center justify-between"><span className="ltr text-xs font-semibold">{w.number}</span><PriorityPill priority={w.priority} /></div>

@@ -60,20 +60,23 @@ export default function FollowupsPage() {
           {groups.filter((g) => g.items.length).map((g) => (
             <Card key={g.key} title={<span className={g.tone}>{g.label} ({num(g.items.length)})</span>} pad={false} bodyClass="p-2">
               {g.items.map((f: any) => (
-                <div key={f.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line/40 px-3 py-3 last:border-0 hover:bg-ink/[0.04] md:rounded-xl md:border-0 md:py-2.5">
+                <div key={f.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line/40 px-2.5 py-2.5 last:border-0 hover:bg-ink/[0.04] md:rounded-xl md:border-0 md:px-3">
                   <div className="min-w-0 basis-full md:min-w-[200px] md:flex-1 md:basis-auto">
                     <div className="flex flex-wrap items-center gap-2">
                       <Link to={`/crm/contacts/${f.contactId}`} className="font-medium text-ink hover:text-iris">{f.contactName}</Link>
                       <LifecyclePill stage={f.contactStage} />
                       {f.priority === 'high' && <span className="text-[11px] font-semibold text-amber">اولویت بالا</span>}
                     </div>
-                    <div className="mt-0.5 text-xs text-mist">{f.note || 'پیگیری'} · {userName(f.userId)}</div>
+                    <div className="mt-0.5 truncate text-xs text-mist">
+                      {f.note || 'پیگیری'} · {userName(f.userId)}
+                      <span className={clsx('md:hidden', status === 'pending' && f.dueAt < Date.now() && 'text-rose')}> · {relative(f.dueAt)}</span>
+                    </div>
                   </div>
                   <PhoneLine phones={f.phones} />
-                  <span className={clsx('text-xs md:w-32', status === 'pending' && f.dueAt < Date.now() ? 'text-rose' : 'text-mist')} title={dateTime(f.dueAt)}>{relative(f.dueAt)}</span>
+                  <span className={clsx('hidden text-xs md:inline md:w-32', status === 'pending' && f.dueAt < Date.now() ? 'text-rose' : 'text-mist')} title={dateTime(f.dueAt)}>{relative(f.dueAt)}</span>
                   {status === 'pending' && (
-                    <div className="flex w-full items-center gap-1 md:w-auto">
-                      <Button size="sm" variant="action" icon={PhoneCall} className="flex-1 md:flex-none" onClick={() => setTouch({ contact: { id: f.contactId, name: f.contactName, phones: f.phones, stage: f.contactStage }, followupId: f.id })}>تماس و ثبت</Button>
+                    <div className="mr-auto flex items-center gap-1 md:mr-0">
+                      <Button size="sm" variant="action" icon={PhoneCall} aria-label="تماس و ثبت" onClick={() => setTouch({ contact: { id: f.contactId, name: f.contactName, phones: f.phones, stage: f.contactStage }, followupId: f.id })}><span className="hidden md:inline">تماس و ثبت</span></Button>
                       <Button size="sm" variant="ghost" icon={AlarmClock} title="تعویق یک روز" onClick={() => act.mutate({ id: f.id, action: 'snooze', days: 1 })} />
                       <Button size="sm" variant="ghost" icon={Check} title="انجام شد" onClick={() => act.mutate({ id: f.id, action: 'complete' })} />
                       <Button size="sm" variant="ghost" icon={X} title="لغو" onClick={() => act.mutate({ id: f.id, action: 'cancel' })} />

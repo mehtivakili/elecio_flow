@@ -108,38 +108,40 @@ export default function ContactsPage() {
       {isLoading ? <Spinner /> : contacts.length === 0 ? (
         <Card><Empty icon={Users} title="مخاطبی یافت نشد" hint="فیلترها را تغییر دهید یا اولین سرنخ را ثبت کنید." action={<Button variant="action" icon={UserPlus} onClick={() => setCreating(true)}>سرنخ جدید</Button>} /></Card>
       ) : <>
-      <div className="space-y-2.5 md:hidden">
+      <div className="space-y-2 md:hidden">
         <div className="px-1 text-xs text-mist">{num(contacts.length)} مخاطب</div>
         {contacts.map((c) => {
           const stage = settings.lifecycleStages.find((s) => s.key === c.stage);
           const place = c.addresses?.[0]?.county || c.addresses?.[0]?.province;
+          const scoreColor = c.score >= settings.scoring.hotThreshold ? 'text-rose' : c.score >= settings.scoring.warmThreshold ? 'text-amber' : 'text-mist';
+          const phone = c.phones?.[0]?.value;
           return (
             <ListCard key={c.id} onClick={() => navigate(`/crm/contacts/${c.id}`)} accent={stage?.color}>
-              <div className="flex items-start gap-3">
-                <Avatar name={c.name} size={42} color={stage?.color} />
+              <div className="flex items-start gap-2.5">
+                <Avatar name={c.name} size={36} color={stage?.color} />
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    {!!c.starred && <Star size={13} className="shrink-0 fill-amber text-amber" />}
-                    <span className="truncate text-[15px] font-bold text-ink">{c.name}</span>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex min-w-0 items-center gap-1">
+                      {!!c.starred && <Star size={12} className="shrink-0 fill-amber text-amber" />}
+                      <span className="truncate text-[14.5px] font-bold text-ink">{c.name}</span>
+                    </span>
+                    <LifecyclePill stage={c.stage} />
                   </div>
-                  <div className="truncate text-xs text-mist">{[c.company, c.jobTitle, place].filter(Boolean).join(' · ') || '—'}</div>
+                  <div className="truncate text-[11.5px] text-mist">
+                    {!['customer', 'lost'].includes(c.stage) && <b className={clsx('num ml-1 font-bold', scoreColor)}>{num(c.score)}</b>}
+                    {[c.company, place].filter(Boolean).join(' · ') || '—'}
+                  </div>
+                  <div className="mt-1.5 flex items-center justify-between gap-2">
+                    <div className="min-w-0 truncate text-[11px]">
+                      {c.nextAction ? <NextActionTag action={c.nextAction} />
+                        : <span className={!c.lastContactAt ? 'text-amber' : 'text-mist'}>{c.lastContactAt ? `آخرین ارتباط ${relative(c.lastContactAt)}` : 'بدون تماس'}</span>}
+                    </div>
+                    <div className="flex shrink-0 gap-1.5">
+                      {phone && <a href={`tel:${phone}`} onClick={(e) => e.stopPropagation()} className="icon-chip text-mint" aria-label="تماس"><Phone size={15} /></a>}
+                      <button type="button" onClick={(e) => { e.stopPropagation(); setTouch(c); }} className="icon-chip text-iris" aria-label="ثبت ارتباط"><PhoneCall size={15} /></button>
+                    </div>
+                  </div>
                 </div>
-                <LifecyclePill stage={c.stage} />
-              </div>
-              {(c.nextAction || !['customer', 'lost'].includes(c.stage)) && (
-                <div className="mt-3 flex items-center justify-between gap-3">
-                  <div className="min-w-0">{c.nextAction ? <NextActionTag action={c.nextAction} /> : <span className="text-xs text-mist">بدون اقدام پیشنهادی</span>}</div>
-                  {!['customer', 'lost'].includes(c.stage) && <ScoreMeter score={c.score} hot={settings.scoring.hotThreshold} warm={settings.scoring.warmThreshold} compact />}
-                </div>
-              )}
-              <div className={clsx('mt-2.5 text-[11px]', !c.lastContactAt ? 'text-amber' : 'text-mist')}>
-                {c.lastContactAt ? `آخرین ارتباط ${relative(c.lastContactAt)}` : 'هنوز تماسی ثبت نشده'} · {userName(c.ownerId)}
-              </div>
-              <div className="mt-3 grid grid-cols-2 gap-2 border-t border-line/50 pt-3">
-                {c.phones?.[0]?.value
-                  ? <a href={`tel:${c.phones[0].value}`} onClick={(e) => e.stopPropagation()} className="card-action"><Phone size={15} className="text-mint" />تماس</a>
-                  : <span className="card-action opacity-40"><Phone size={15} />بدون تلفن</span>}
-                <button type="button" onClick={(e) => { e.stopPropagation(); setTouch(c); }} className="card-action"><PhoneCall size={15} className="text-iris" />ثبت ارتباط</button>
               </div>
             </ListCard>
           );

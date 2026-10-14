@@ -93,7 +93,37 @@ export default function WorkOrderPage() {
             </div>
           </div>
 
-          <div className="overflow-x-auto">
+          {/* Phones: one dense row per device — the step icons match the step tiles above */}
+          <div className="px-2 pb-2 md:hidden">
+            <div className="grid items-center gap-x-1.5 px-2 pb-1.5 pt-1 text-mist" style={{ gridTemplateColumns: `22px minmax(0,1fr) repeat(${DEVICE_STEPS.length}, 30px) 30px` }}>
+              <span>{currentDeviceStep && currentDeviceStep.key !== 'testing' && <input type="checkbox" className="h-4 w-4" aria-label="انتخاب همه دستگاه‌های معطل" checked={currentPending.length > 0 && currentPending.every((u: any) => selectedUnits.includes(u.id))} onChange={(e) => setSelectedUnits(e.target.checked ? currentPending.map((u: any) => u.id) : [])} />}</span>
+              <span className="text-[11px]">سریال</span>
+              {DEVICE_STEPS.map((s) => <span key={s.key} className="flex justify-center" title={s.label}><s.icon size={14} style={{ color: s.color }} /></span>)}
+              <span className="text-center text-[11px]">کل</span>
+            </div>
+            <div className="divide-y divide-line/40 rounded-xl bg-deep/40">
+              {data.units.map((unit: any) => {
+                const completed = DEVICE_STEPS.filter((s) => stepDone(unit, s.key)).length;
+                const selectable = !!currentDeviceStep && currentDeviceStep.key !== 'testing' && !stepDone(unit, currentDeviceStep.key) && unit.status !== 'scrapped';
+                return (
+                  <div key={unit.id} className={clsx('grid items-center gap-x-1.5 px-2 py-2', unit.status === 'scrapped' && 'opacity-40')} style={{ gridTemplateColumns: `22px minmax(0,1fr) repeat(${DEVICE_STEPS.length}, 30px) 30px` }}>
+                    <input type="checkbox" className="h-4 w-4" aria-label={`انتخاب ${unit.serial}`} disabled={!selectable} checked={selectedUnits.includes(unit.id)} onChange={(e) => setSelectedUnits((old) => e.target.checked ? [...old, unit.id] : old.filter((x) => x !== unit.id))} />
+                    <Link to={`/units/${unit.serial}`} className="ltr truncate text-right font-mono text-xs text-ink">{unit.serial}</Link>
+                    {DEVICE_STEPS.map((step) => {
+                      const done = stepDone(unit, step.key);
+                      return <span key={step.key} className="flex justify-center">
+                        <span className={clsx('inline-flex h-6 w-6 items-center justify-center rounded-full', done ? 'bg-mint/15 text-mint' : w.stage === step.key ? 'bg-amber/15 text-amber' : 'bg-ink/[0.04] text-slate')}>
+                          {done ? <CheckCircle2 size={14} /> : <span className="h-1.5 w-1.5 rounded-full bg-current" />}
+                        </span>
+                      </span>;
+                    })}
+                    <span className="num text-center text-[11px] text-mist">{num(completed)}/{num(DEVICE_STEPS.length)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          <div className="hidden overflow-x-auto md:block">
             <table className="tbl min-w-[760px]">
               <thead><tr>
                 <th className="w-10">{currentDeviceStep && currentDeviceStep.key !== 'testing' && <input type="checkbox" aria-label="انتخاب همه دستگاه‌های معطل" checked={currentPending.length > 0 && currentPending.every((u: any) => selectedUnits.includes(u.id))} onChange={(e) => setSelectedUnits(e.target.checked ? currentPending.map((u: any) => u.id) : [])} />}</th>

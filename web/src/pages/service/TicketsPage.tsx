@@ -60,30 +60,28 @@ export default function TicketsPage() {
         <SearchBox value={search} onChange={setSearch} className="min-w-0 flex-1 md:min-w-[200px]" placeholder="شماره، موضوع، مشتری، سریال…" />
       </div>
       {isLoading ? <Spinner /> : list.length === 0 ? <Card><Empty icon={LifeBuoy} title="تیکتی یافت نشد" /></Card> : (<>
-        <div className="space-y-2.5 md:hidden">
-          {list.map((t) => (
-            <ListCard key={t.id} to={`/service/tickets/${t.id}`} accent={t.breached && isOpen(t) ? '#FF499E' : settings.ticketTypes.find((x) => x.key === t.type)?.color}>
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="line-clamp-2 text-[15px] font-bold leading-6 text-ink">{t.subject}</div>
-                  <div className="mt-0.5 text-[11px] text-mist"><span className="ltr">{t.number}</span> · {t.contactName ?? '—'}</div>
+        <div className="space-y-2 md:hidden">
+          {list.map((t) => {
+            const breached = t.breached && isOpen(t);
+            return (
+              <ListCard key={t.id} to={`/service/tickets/${t.id}`} accent={breached ? '#FF499E' : settings.ticketTypes.find((x) => x.key === t.type)?.color}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate text-[14.5px] font-bold text-ink">{t.subject}</span>
+                  <TicketStatusPill status={t.status} />
                 </div>
-                <TicketStatusPill status={t.status} />
-              </div>
-              <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-                <TicketTypePill type={t.type} />
-                <PriorityPill priority={t.priority} />
-                {t.serial && <span className="ltr rounded-full bg-ink/[0.06] px-2 py-0.5 font-mono text-[11px] text-frost">{t.serial}</span>}
-              </div>
-              <div className="mt-3 flex items-center justify-between gap-2 border-t border-line/50 pt-2.5 text-[11px]">
-                <span className={clsx(t.breached && isOpen(t) ? 'font-semibold text-rose' : 'text-mist')}>
-                  {isOpen(t) ? (t.breached ? `نقض SLA — ${relative(t.slaDueAt)}` : `SLA ${relative(t.slaDueAt)}`) : 'بسته شده'}
-                </span>
-                <span className="text-mist">{t.assigneeName ?? 'بدون کارشناس'}</span>
-              </div>
-              {t.scheduledAt && isOpen(t) && <div className="mt-1.5 text-[11px] text-iris">نوبت بازدید: {date(t.scheduledAt)}</div>}
-            </ListCard>
-          ))}
+                <div className="mt-0.5 truncate text-[11.5px] text-mist">
+                  <span className="ltr">{t.number}</span> · {t.contactName ?? '—'}{t.serial ? <> · <span className="ltr font-mono">{t.serial}</span></> : null}
+                </div>
+                <div className="mt-1.5 flex items-center gap-1.5 text-[11px]">
+                  <TicketTypePill type={t.type} />
+                  {['high', 'urgent'].includes(t.priority) && <PriorityPill priority={t.priority} />}
+                  <span className={clsx('mr-auto truncate', breached ? 'font-semibold text-rose' : 'text-mist')}>
+                    {isOpen(t) ? (t.scheduledAt ? `نوبت ${date(t.scheduledAt)}` : breached ? `نقض SLA ${relative(t.slaDueAt)}` : `SLA ${relative(t.slaDueAt)}`) : (t.assigneeName ?? '—')}
+                  </span>
+                </div>
+              </ListCard>
+            );
+          })}
         </div>
         <Card pad={false} bodyClass="overflow-x-auto" className="hidden md:block">
           <table className="tbl">

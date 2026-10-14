@@ -203,10 +203,10 @@ html { -webkit-tap-highlight-color: transparent; }
   display: block;
   width: 100%;
   text-align: right;
-  border-radius: 18px;
+  border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.06);
   background: linear-gradient(180deg, rgba(224, 251, 252, 0.055), rgba(224, 251, 252, 0.03));
-  padding: 14px;
+  padding: 10px 12px;
   transition: transform 0.12s ease, background-color 0.15s ease;
 }
 .list-card:active { transform: scale(0.985); background-color: rgba(224, 251, 252, 0.04); }
@@ -227,43 +227,24 @@ html { -webkit-tap-highlight-color: transparent; }
   .text-xs { font-size: 12.5px; }
   .chip { font-size: 11.5px; padding: 3px 9px; }
 
-  /* KPI rows become a swipeable rail instead of a tall grid */
-  .stat-rail {
-    display: flex !important;
-    gap: 10px !important;
-    overflow-x: auto;
-    scroll-snap-type: x mandatory;
-    margin-inline: -14px;
-    padding-inline: 14px;
-    scroll-padding-inline: 14px;
-    scrollbar-width: none;
-  }
-  .stat-rail::-webkit-scrollbar { display: none; }
-  .stat-rail > * { flex: 0 0 auto; width: 46%; min-width: 150px; scroll-snap-align: start; }
+  /* KPI rows: compact 2-up grid — everything visible, nothing to swipe */
+  .stat-rail { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 8px !important; }
 
-  /* Kanban boards: one column per screen, snapping */
-  .board {
-    scroll-snap-type: x mandatory;
-    margin-inline: -14px !important;
-    padding-inline: 14px !important;
-    scroll-padding-inline: 14px;
-    gap: 10px !important;
-    scrollbar-width: none;
-  }
-  .board::-webkit-scrollbar { display: none; }
-  .board > * { width: 84vw !important; scroll-snap-align: start; }
+  /* Kanban boards: a stage switch picks one column, shown as a plain vertical list */
+  .board { display: block !important; overflow: visible !important; margin: 0 !important; padding: 0 !important; }
+  .board > * { width: 100% !important; }
 
   /* Every data table stacks into labelled cards (labels come from the header row) */
-  .tbl:not(.tbl-keep), .tbl:not(.tbl-keep) tbody { display: block; width: 100%; }
+  .tbl:not(.tbl-keep), .tbl:not(.tbl-keep) tbody { display: block; width: 100%; min-width: 0 !important; }
   .tbl:not(.tbl-keep) thead { display: none; }
-  .tbl:not(.tbl-keep) tbody { padding: 8px; }
+  .tbl:not(.tbl-keep) tbody { padding: 6px; }
   .tbl:not(.tbl-keep) tbody tr {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px 14px;
-    padding: 13px 14px;
-    margin-bottom: 8px;
-    border-radius: 16px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px 10px;
+    padding: 10px 12px;
+    margin-bottom: 6px;
+    border-radius: 14px;
     border: 1px solid rgba(255, 255, 255, 0.06);
     background: rgba(28, 39, 43, 0.55);
   }
@@ -283,16 +264,17 @@ html { -webkit-tap-highlight-color: transparent; }
   .tbl:not(.tbl-keep) td::before {
     content: attr(data-label);
     display: block;
-    margin-bottom: 3px;
-    font-size: 11px;
+    margin-bottom: 1px;
+    font-size: 10.5px;
     font-weight: 500;
     color: #9DB4C0;
   }
-  .tbl:not(.tbl-keep) td:first-child { grid-column: 1 / -1; font-size: 14.5px; font-weight: 600; }
+  .tbl:not(.tbl-keep) td:first-child { grid-column: 1 / -1; font-size: 14px; font-weight: 600; }
   .tbl:not(.tbl-keep) td:first-child::before,
   .tbl:not(.tbl-keep) td[data-label='']::before,
   .tbl:not(.tbl-keep) td:not([data-label])::before { display: none; }
   .tbl:not(.tbl-keep) td:empty { display: none; }
+  .tbl:not(.tbl-keep) td .chip { max-width: 100%; white-space: normal; line-height: 1.5; }
   .tbl:not(.tbl-keep) td[colspan] { grid-column: 1 / -1; }
   .tbl:not(.tbl-keep) td[data-label=''] { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 6px; }
   .tbl:not(.tbl-keep) td[data-label='']:not(:has(*)) { display: none; }
@@ -343,6 +325,73 @@ html { -webkit-tap-highlight-color: transparent; }
   .gap-6 { gap: 1rem; }
   .gap-5 { gap: 0.875rem; }
   /* The page's main action leads its swipeable action row */
-  .page-actions > .glow-btn { order: -1; }
-  .page-actions > * { flex-shrink: 0; }
+  .page-actions > .glow-btn { order: -1; flex: 1 1 100%; }
+  .page-actions > [role='tablist'] { flex: 1 1 100%; }
 }
+
+/* Small round icon action inside a row card */
+.icon-chip {
+  display: flex; height: 34px; width: 34px; flex-shrink: 0; align-items: center; justify-content: center;
+  border-radius: 11px; background: rgba(224, 251, 252, 0.07); color: #C2DFE3; transition: transform .12s ease;
+}
+.icon-chip:active { transform: scale(0.9); }
+.mini-stat { white-space: nowrap; color: #9DB4C0; }
+.mini-stat b { font-weight: 700; color: #E0FBFC; margin-inline-start: 3px; font-feature-settings: "ss02", "tnum"; }
+
+/* ───── Liquid glass lens (stage bar + bottom tab bar) ───── */
+.liquid-glass {
+  --tint: #779BE7;
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0) 60%),
+    linear-gradient(180deg, color-mix(in srgb, var(--tint) 30%, transparent), color-mix(in srgb, var(--tint) 12%, transparent));
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.5),
+    inset 0 -6px 14px -6px color-mix(in srgb, var(--tint) 70%, transparent),
+    0 8px 22px -10px rgba(0, 0, 0, 0.75),
+    0 0 18px -6px color-mix(in srgb, var(--tint) 65%, transparent);
+  backdrop-filter: blur(10px) saturate(1.9);
+  -webkit-backdrop-filter: blur(10px) saturate(1.9);
+  transform-origin: center;
+  will-change: left, width, transform;
+}
+.liquid-glass::after {
+  content: '';
+  position: absolute;
+  inset: 1px 10% auto;
+  height: 46%;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.26), rgba(255, 255, 255, 0));
+  filter: blur(0.5px);
+  pointer-events: none;
+}
+@keyframes liquid-drop-a { 0% { transform: scale(1, 1); } 28% { transform: scale(1.42, 0.78); } 55% { transform: scale(0.9, 1.1); } 78% { transform: scale(1.04, 0.97); } 100% { transform: scale(1, 1); } }
+@keyframes liquid-drop-b { 0% { transform: scale(1, 1); } 28% { transform: scale(1.42, 0.78); } 55% { transform: scale(0.9, 1.1); } 78% { transform: scale(1.04, 0.97); } 100% { transform: scale(1, 1); } }
+.liquid-tab { transition: left 0.55s cubic-bezier(0.34, 1.32, 0.5, 1); }
+.liquid-tab.drop-a { animation: liquid-drop-a 0.62s cubic-bezier(0.3, 0.7, 0.3, 1); }
+.liquid-tab.drop-b { animation: liquid-drop-b 0.62s cubic-bezier(0.3, 0.7, 0.3, 1); }
+
+/* Small edge hints that say "there is another stage this way" */
+@keyframes edge-nudge-left { 0%, 100% { transform: translate(0, -50%); } 50% { transform: translate(-3px, -50%); } }
+@keyframes edge-nudge-right { 0%, 100% { transform: translate(0, -50%); } 50% { transform: translate(3px, -50%); } }
+.edge-hint {
+  position: fixed;
+  top: 56%;
+  z-index: 30;
+  display: flex;
+  height: 46px;
+  width: 20px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: #E0FBFC;
+  background: rgba(43, 58, 64, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 6px 16px -6px rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(10px) saturate(1.6);
+  -webkit-backdrop-filter: blur(10px) saturate(1.6);
+  opacity: 0.85;
+  transform: translateY(-50%);
+}
+.edge-hint.left-1 { animation: edge-nudge-left 1.8s ease-in-out infinite; }
+.edge-hint.right-1 { animation: edge-nudge-right 1.8s ease-in-out infinite; }

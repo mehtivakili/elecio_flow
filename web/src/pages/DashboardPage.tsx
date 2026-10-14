@@ -55,10 +55,31 @@ export default function DashboardPage() {
           </div>
           <Link to="/operations/product-flow" className="flex items-center gap-1 text-xs font-medium text-iris hover:text-ink"><span className="hidden sm:inline">مشاهده جزئیات و چک‌لیست‌ها</span><span className="sm:hidden">جزئیات</span> <ChevronLeft size={14} /></Link>
         </div>
-        <div className="no-scrollbar flex snap-x snap-mandatory gap-px overflow-x-auto bg-line/40 md:grid md:grid-cols-3 md:overflow-visible xl:grid-cols-6">
+        {/* Phones: the process reads as a two-column numbered timeline (1–4 then 5–8) */}
+        <div
+          className="grid grid-flow-col grid-cols-2 gap-x-4 px-4 py-2.5 md:hidden"
+          style={{ gridTemplateRows: `repeat(${Math.ceil(settings.productFlow.length / 2)}, auto)` }}
+        >
+          {settings.productFlow.map((step, index) => {
+            const perColumn = Math.ceil(settings.productFlow.length / 2);
+            const next = settings.productFlow[index + 1];
+            const lastInColumn = (index + 1) % perColumn === 0 || !next;
+            return (
+              <Link key={step.id} to={step.to} className="relative flex min-w-0 items-start gap-2.5 py-1.5 transition active:opacity-70">
+                {!lastInColumn && <span className="absolute -bottom-5 right-[13px] top-5 w-0.5 rounded-full" style={{ background: `linear-gradient(${step.color}99, ${next.color}99)` }} />}
+                <span className="num relative z-[1] flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-extrabold text-night shadow-[0_0_0_3px_#283840]" style={{ background: step.color }}>{index + 1}</span>
+                <span className="min-w-0">
+                  <span className="mt-0.5 block text-[13px] font-semibold leading-[1.4] text-ink">{step.title}</span>
+                  <span className="block truncate text-[10.5px] leading-4 text-mist">{step.owner}</span>
+                </span>
+              </Link>
+            );
+          })}
+        </div>
+        <div className="hidden gap-px bg-line/40 md:grid md:grid-cols-3 xl:grid-cols-6">
           {settings.productFlow.map((step, index) => {
             const StepIcon = PRODUCT_FLOW_ICONS[step.icon];
-            return <Link key={step.id} to={step.to} className="group relative min-h-[118px] w-[38%] shrink-0 snap-start bg-deep/65 p-3 transition hover:bg-ink/[0.06] active:bg-ink/[0.08] md:min-h-[128px] md:w-auto">
+            return <Link key={step.id} to={step.to} className="group relative min-h-[128px] bg-deep/65 p-3 transition hover:bg-ink/[0.06]">
               <div className="flex items-center justify-between">
                 <span className="num flex h-7 w-7 items-center justify-center rounded-xl text-xs font-extrabold text-night" style={{ background: step.color }}>{index + 1}</span>
                 <StepIcon size={17} style={{ color: step.color }} />

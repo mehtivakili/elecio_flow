@@ -1,18 +1,21 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { GitBranch, Star, PhoneCall, UserPlus, LayoutGrid, List } from 'lucide-react';
+import { GitBranch, Star, Phone, PhoneCall, UserPlus, LayoutGrid, List } from 'lucide-react';
 import clsx from 'clsx';
 import { post } from '../../lib/api';
 import { useAction, useApi } from '../../lib/hooks';
 import { useSession } from '../../lib/session';
-import { BoardJump, Filters, PageHeader, SearchBox, Select, Spinner, Tabs, useConfirm } from '../../components/ui';
+import { Avatar, Filters, IconToggle, PageHeader, SearchBox, Select, Spinner, useConfirm } from '../../components/ui';
+import { StagePager } from '../../components/StagePager';
+import { useIsMobile } from '../../lib/media';
 import { ContactFormModal, LogTouchModal, NextActionTag } from '../../components/crm';
-import { ScoreMeter } from '../../components/charts';
+import { ScoreMeter, ScoreRing } from '../../components/charts';
 import { compactMoney, num, relative } from '../../lib/format';
 import { matchesSearch } from '@shared/search';
 
 export default function PipelinePage() {
   const { settings, users, userName } = useSession();
+  const mobile = useIsMobile();
   const confirm = useConfirm();
   const { data = [], isLoading } = useApi<any[]>('/pipeline');
   const [owner, setOwner] = useState('');
@@ -29,6 +32,12 @@ export default function PipelinePage() {
 
   const contacts = useMemo(() => data.filter((c) =>
     (!owner || c.ownerId === owner) && matchesSearch(`${c.name} ${c.company}`, search)), [data, owner, search]);
+
+  // While searching, the stage bar keeps only the stages that contain a match
+  // (one match → the pager lands straight on that stage).
+  const pagerStages = useMemo(() => settings.lifecycleStages
+    .map((s) => ({ key: s.key, label: s.label, color: s.color, count: contacts.filter((c) => c.stage === s.key).length }))
+    .filter((s) => !search.trim() || s.count > 0), [settings.lifecycleStages, contacts, search]);
 
   const moveContact = async (c: any, stage: string) => {
     if (!c || c.stage === stage) return;
@@ -52,21 +61,14 @@ export default function PipelinePage() {
       <PageHeader
         icon={GitBranch}
         title="قیف فروش"
-        subtitle="کارت‌ها را بین مراحل بکشید — هر کارت بر اساس امتیاز مرتب شده است"
-        actions={<>
-          <Tabs
-            value={view}
-            onChange={setView}
-            tabs={[{ key: 'board', label: 'کارت', icon: LayoutGrid }, { key: 'list', label: 'لیست', icon: List }]}
-          />
-          <div className="hidden md:contents">
-            <SearchBox value={search} onChange={setSearch} className="w-56" />
-            <Select className="w-44" value={owner} onChange={(e) => setOwner(e.target.value)}>
-              <option value="">همه کارشناسان</option>
-              {users.map((u) => <option key={u.id} value={u.id}>{u.fullName}</option>)}
-            </Select>
-          </div>
-        </>}
+        aside={<IconToggle value={view} onChange={setView} options={[{ key: 'board', label: 'نمای کارت', icon: LayoutGrid }, { key: 'list', label: 'نمای لیست', icon: List }]} />}
+        actions={<div className="hidden md:contents">
+          <SearchBox value={search} onChange={setSearch} className="w-56" />
+          <Select className="w-44" value={owner} onChange={(e) => setOwner(e.target.value)}>
+            <option value="">همه کارشناسان</option>
+            {users.map((u) => <option key={u.id} value={u.id}>{u.fullName}</option>)}
+          </Select>
+        </div>}
         fab={{ label: 'سرنخ جدید', icon: UserPlus, onClick: () => setCreating(true) }}
       />
       <div className="mb-3 flex items-center gap-2 md:hidden">
@@ -113,10 +115,59 @@ export default function PipelinePage() {
             {contacts.length === 0 && <div className="py-14 text-center text-sm text-mist">موردی با این فیلتر پیدا نشد</div>}
           </div>
         </div>
-      ) : <>
-      <BoardJump stages={settings.lifecycleStages.map((s) => ({ key: s.key, label: s.label, color: s.color, count: contacts.filter((c) => c.stage === s.key).length }))} />
+      ) : mobile ? (pagerStages.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-line/70 py-14 text-center text-sm text-mist">موردی با این جستجو پیدا نشد</div>
+      ) : (
+        <StagePager
+          stages={pagerStages}
+          renderPage={(key) => {
+            const stage = settings.lifecycleStages.find((s) => s.key === key)!;
+            const cards = contacts.filter((c) => c.stage === key);
+            const value = cards.reduce((sum, c) => sum + (c.openOrderValue || c.estimatedValue || 0), 0);
+            const share = contacts.length ? Math.round((cards.length / contacts.length) * 100) : 0;
+            return (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2 px-1 text-[11.5px] text-mist">
+                  <span><b className="num text-ink">{num(cards.length)}</b> مورد · <b className="num text-ink">{num(share)}٪</b> از کل قیف</span>
+                  <span className="num">{compactMoney(value)} {settings.company.currency}</span>
+                </div>
+                {cards.map((c) => {
+                  const phone = c.phones?.[0]?.value;
+                  return (
+                    <div key={c.id} className="list-card" style={{ boxShadow: `inset -3px 0 0 ${stage.color}` }}>
+                      <div className="flex items-center gap-3">
+                        {stage.final
+                          ? <Avatar name={c.name} size={44} color={stage.color} />
+                          : <ScoreRing score={c.score} hot={settings.scoring.hotThreshold} warm={settings.scoring.warmThreshold} />}
+                        <Link to={`/crm/contacts/${c.id}`} className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1 text-[14.5px] font-bold text-ink">
+                            {!!c.starred && <Star size={12} className="shrink-0 fill-amber text-amber" />}<span className="truncate">{c.name}</span>
+                          </div>
+                          <div className="truncate text-[11.5px] text-mist">
+                            {[c.addresses?.[0]?.county, c.attrs?.machines ? `${num(c.attrs.machines)} ماشین` : null, c.lastContactAt ? relative(c.lastContactAt) : 'بدون تماس'].filter(Boolean).join(' · ')}
+                          </div>
+                          {c.nextAction && <div className="mt-1"><NextActionTag action={c.nextAction} /></div>}
+                        </Link>
+                      </div>
+                      {c.stage === 'lost' && c.lostReason && <div className="mt-1.5 text-[11px] text-rose">دلیل: {c.lostReason}</div>}
+                      <div className="mt-2.5 flex items-center gap-1.5">
+                        <Select aria-label={`انتقال ${c.name}`} className="!min-h-[34px] h-[34px] flex-1 py-0 text-xs" value={c.stage} onChange={(e) => moveContact(c, e.target.value)}>
+                          {settings.lifecycleStages.map((s) => <option key={s.key} value={s.key}>{s.key === c.stage ? 'انتقال به مرحله…' : s.label}</option>)}
+                        </Select>
+                        {phone && <a href={`tel:${phone}`} className="icon-chip text-mint" aria-label="تماس"><Phone size={15} /></a>}
+                        <button type="button" onClick={() => setTouch(c)} className="icon-chip text-iris" aria-label="ثبت ارتباط"><PhoneCall size={15} /></button>
+                      </div>
+                    </div>
+                  );
+                })}
+                {cards.length === 0 && <div className="rounded-2xl border border-dashed border-line/70 py-12 text-center text-xs text-mist">موردی در این مرحله نیست</div>}
+              </div>
+            );
+          }}
+        />
+      )) : <>
       <div
-        className="board -mx-3 flex gap-2.5 overflow-x-auto px-3 pb-4 lg:-mx-6 lg:px-6 xl:grid xl:overflow-x-visible"
+        className="-mx-3 flex gap-2.5 overflow-x-auto px-3 pb-4 lg:-mx-6 lg:px-6 xl:grid xl:overflow-x-visible"
         style={{ gridTemplateColumns: `repeat(${settings.lifecycleStages.length}, minmax(0, 1fr))` }}
       >
         {settings.lifecycleStages.map((stage) => {
@@ -125,7 +176,6 @@ export default function PipelinePage() {
           return (
             <div
               key={stage.key}
-              data-col={stage.key}
               onDragOver={(e) => { e.preventDefault(); setOver(stage.key); }}
               onDragLeave={() => setOver((o) => (o === stage.key ? null : o))}
               onDrop={() => drop(stage.key)}
@@ -138,7 +188,7 @@ export default function PipelinePage() {
                 </div>
                 <span className="num rounded-full px-2 py-0.5 text-xs font-bold text-night" style={{ background: stage.color }}>{num(cards.length)}</span>
               </div>
-              <div className="flex min-h-[160px] flex-col gap-2 p-2.5 md:max-h-[calc(100vh-250px)] md:min-h-[200px] md:overflow-y-auto">
+              <div className="flex max-h-[calc(100vh-250px)] min-h-[200px] flex-col gap-2 overflow-y-auto p-2.5">
                 {cards.map((c) => (
                   <div
                     key={c.id}
@@ -163,9 +213,6 @@ export default function PipelinePage() {
                       <span>{c.lastContactAt ? relative(c.lastContactAt) : 'بدون تماس'}</span>
                     </div>
                     {c.stage === 'lost' && c.lostReason && <div className="mt-1.5 text-[11px] text-rose">دلیل: {c.lostReason}</div>}
-                    <Select aria-label={`انتقال ${c.name}`} className="mt-2.5 !min-h-[38px] py-1 text-xs md:hidden" value={c.stage} onChange={(e) => moveContact(c, e.target.value)}>
-                      {settings.lifecycleStages.map((s) => <option key={s.key} value={s.key}>انتقال به: {s.label}</option>)}
-                    </Select>
                   </div>
                 ))}
                 {cards.length === 0 && <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-line/70 py-8 text-xs text-mist">کارتی اینجا رها کنید</div>}
