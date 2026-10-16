@@ -9,6 +9,7 @@ import { Avatar, Filters, IconToggle, PageHeader, SearchBox, Select, Spinner, us
 import { StagePager } from '../../components/StagePager';
 import { useIsMobile } from '../../lib/media';
 import { ContactFormModal, LogTouchModal, NextActionTag } from '../../components/crm';
+import { DeviceStats, PipelineList } from '../../components/pipelineList';
 import { ScoreMeter, ScoreRing } from '../../components/charts';
 import { compactMoney, num, relative } from '../../lib/format';
 import { matchesSearch } from '@shared/search';
@@ -81,40 +82,7 @@ export default function PipelinePage() {
         </Filters>
       </div>
       {view === 'list' ? (
-        <div className="glass overflow-hidden">
-          <div className="hidden grid-cols-[minmax(180px,1.5fr)_minmax(130px,1fr)_88px_minmax(150px,1.2fr)_110px_36px] gap-3 border-b border-line/70 bg-deep/50 px-4 py-2.5 text-xs text-mist md:grid">
-            <span>مشتری</span><span>مرحله</span><span>امتیاز</span><span>اقدام بعدی</span><span>کارشناس</span><span />
-          </div>
-          <div className="divide-y divide-line/60">
-            {contacts.slice().sort((a, b) => b.score - a.score).map((c) => {
-              const stage = settings.lifecycleStages.find((s) => s.key === c.stage);
-              return (
-                <div key={c.id} className="relative grid gap-2 px-3 py-3 transition hover:bg-ink/[0.035] md:grid-cols-[minmax(180px,1.5fr)_minmax(130px,1fr)_88px_minmax(150px,1.2fr)_110px_36px] md:items-center md:gap-3 md:px-4 md:py-2">
-                  <Link to={`/crm/contacts/${c.id}`} className="min-w-0">
-                    <div className="flex items-center gap-1.5 truncate text-sm font-semibold text-ink hover:text-iris">
-                      {!!c.starred && <Star size={12} className="shrink-0 fill-amber text-amber" />}{c.name}
-                    </div>
-                    <div className="truncate text-[11px] text-mist">{c.company || c.addresses?.[0]?.county || '—'} · {c.lastContactAt ? relative(c.lastContactAt) : 'بدون تماس'}</div>
-                  </Link>
-                  <Select
-                    aria-label={`مرحله ${c.name}`}
-                    className="h-8 py-0 text-xs"
-                    value={c.stage}
-                    onChange={(e) => moveContact(c, e.target.value)}
-                    style={{ borderColor: `${stage?.color ?? '#779BE7'}66` }}
-                  >
-                    {settings.lifecycleStages.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
-                  </Select>
-                  <div className="hidden md:block"><ScoreMeter score={c.score} hot={settings.scoring.hotThreshold} warm={settings.scoring.warmThreshold} /></div>
-                  <div className="min-w-0">{c.nextAction ? <NextActionTag action={c.nextAction} /> : <span className="text-xs text-mist">بدون اقدام</span>}</div>
-                  <div className="hidden truncate text-xs text-mist md:block">{userName(c.ownerId)}</div>
-                  <button onClick={() => setTouch(c)} className="absolute left-5 mt-0.5 rounded-lg p-1.5 text-mist hover:bg-iris/20 hover:text-iris md:static" title="ثبت ارتباط"><PhoneCall size={15} /></button>
-                </div>
-              );
-            })}
-            {contacts.length === 0 && <div className="py-14 text-center text-sm text-mist">موردی با این فیلتر پیدا نشد</div>}
-          </div>
-        </div>
+        <PipelineList contacts={contacts} onMove={moveContact} onReport={setTouch} />
       ) : mobile ? (pagerStages.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-line/70 py-14 text-center text-sm text-mist">موردی با این جستجو پیدا نشد</div>
       ) : (
@@ -149,6 +117,7 @@ export default function PipelinePage() {
                             <div className="truncate text-[11.5px] text-mist">
                               {[c.addresses?.[0]?.county, c.attrs?.machines ? `${num(c.attrs.machines)} ماشین` : null, c.lastContactAt ? relative(c.lastContactAt) : 'بدون تماس'].filter(Boolean).join(' · ')}
                             </div>
+                            {(c.devicesBought > 0 || c.devicesOwned > 0) && <div className="mt-1.5"><DeviceStats c={c} /></div>}
                             {c.nextAction && <div className="mt-1"><NextActionTag action={c.nextAction} /></div>}
                           </Link>
                           {c.stage === 'lost' && c.lostReason && <div className="mt-1.5 text-[11px] text-rose">دلیل: {c.lostReason}</div>}
@@ -214,6 +183,7 @@ export default function PipelinePage() {
                       <button onClick={() => setTouch(c)} className="rounded-lg p-1 text-mist hover:bg-iris/20 hover:text-iris" title="ثبت ارتباط"><PhoneCall size={14} /></button>
                     </div>
                     {!stage.final && <div className="mt-2.5"><ScoreMeter score={c.score} hot={settings.scoring.hotThreshold} warm={settings.scoring.warmThreshold} /></div>}
+                    {(c.devicesBought > 0 || c.devicesOwned > 0) && <div className="mt-2"><DeviceStats c={c} /></div>}
                     {c.nextAction && <div className="mt-2"><NextActionTag action={c.nextAction} /></div>}
                     <div className="mt-2.5 flex items-center justify-between text-[11px] text-mist">
                       <span>{userName(c.ownerId)}</span>

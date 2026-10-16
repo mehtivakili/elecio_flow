@@ -323,7 +323,35 @@ crmRouter.get('/pipeline', h((req) => {
     "SELECT contact_id, SUM(total) AS v FROM orders WHERE org_id = ? AND status = 'open' AND deleted_at IS NULL GROUP BY contact_id", req.user.orgId,
   );
   const valueMap = Object.fromEntries(openValue.map((r) => [r.contactId, r.v]));
-  return contacts.map((c) => ({ ...c, openOrderValue: valueMap[c.id] ?? 0 }));
+  // Per customer: devices bought (product quantities on real sales, past sales included),
+  // devices they have now, what they bought for and still owe, and open service tickets.
+  const sales = q(
+    `SELECT o.contact_id, COUNT(*) AS orders, SUM(o.total) AS revenue, SUM(o.total - o.paid) AS balance, MAX(COALESCE(o.legacy_date, o.created_at)) AS last_at,
+       SUM((SELECT COALESCE(SUM(l.qty), 0) FROM order_lines l JOIN items i ON i.id = l.item_id WHERE l.order_id = o.id AND i.kind = 'product')) AS devices
+     FROM orders o WHERE o.org_id = ? AND o.deleted_at IS NULL AND o.status != 'cancelled' AND o.stage != 'quote' GROUP BY o.contact_id`, req.user.orgId,
+  );
+  // Devices registered to the customer (manual entries without a price have no sale order) and those in use now.
+  const owned = q(
+    `SELECT contact_id, COUNT(*) AS total, SUM(status IN ('installed','shipped','in_repair')) AS n FROM units
+     WHERE org_id = ? AND deleted_at IS NULL AND contact_id IS NOT NULL AND status != 'scrapped' GROUP BY contact_id`, req.user.orgId,
+  );
+  const tickets = q(
+    "SELECT contact_id, COUNT(*) AS n FROM tickets WHERE org_id = ? AND status NOT IN ('resolved','closed') AND deleted_at IS NULL GROUP BY contact_id", req.user.orgId,
+  );
+  const saleMap = Object.fromEntries(sales.map((r) => [r.contactId, r]));
+  const ownedMap = Object.fromEntries(owned.map((r) => [r.contactId, r]));
+  const ticketMap = Object.fromEntries(tickets.map((r) => [r.contactId, r.n]));
+  return contacts.map((c) => ({
+    ...c,
+    openOrderValue: valueMap[c.id] ?? 0,
+    devicesBought: Math.max(saleMap[c.id]?.devices ?? 0, ownedMap[c.id]?.total ?? 0),
+    devicesOwned: ownedMap[c.id]?.n ?? 0,
+    revenue: saleMap[c.id]?.revenue ?? 0,
+    balance: Math.max(0, saleMap[c.id]?.balance ?? 0),
+    ordersCount: saleMap[c.id]?.orders ?? 0,
+    lastOrderAt: saleMap[c.id]?.lastAt ?? null,
+    openTickets: ticketMap[c.id] ?? 0,
+  }));
 }));
 
 crmRouter.get('/hot-leads', h((req) => {
