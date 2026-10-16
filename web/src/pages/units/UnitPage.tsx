@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   Cpu, Wrench, Upload, StickyNote, Trash2, Factory, ShoppingCart, MapPin, Phone, ClipboardCheck, PackageCheck, Truck,
@@ -6,6 +7,7 @@ import {
 import clsx from 'clsx';
 import { post, put } from '../../lib/api';
 import { useAction, useApi } from '../../lib/hooks';
+import { DeleteReport, UNIT_DELETE_HELP, type BulkDeleteResult } from '../../components/selection';
 import { useSession } from '../../lib/session';
 import { Button, Card, Empty, KV, PageHeader, Spinner, useConfirm } from '../../components/ui';
 import { TicketStatusPill, UnitStatusPill, WarrantyBadge } from '../../components/domain';
@@ -30,10 +32,12 @@ export default function UnitPage() {
   const { key } = useParams();
   const navigate = useNavigate();
   const confirm = useConfirm();
-  const { settings, isAdmin } = useSession();
+  const { settings, isAdmin, can } = useSession();
+  const [report, setReport] = useState<BulkDeleteResult | null>(null);
   const { data, isLoading, error } = useApi<any>(`/units/${encodeURIComponent(key!)}`);
   const update = useAction((body: any) => put(`/units/${data.unit.id}`, body), { success: 'شناسنامه دستگاه به‌روز شد' });
   const addNote = useAction((summary: string) => post(`/units/${data.unit.id}/events`, { summary }), { success: 'یادداشت ثبت شد' });
+  const remove = useAction(() => post<BulkDeleteResult>('/units/bulk-delete', { ids: [data.unit.id] }), { onSuccess: setReport });
 
   if (isLoading) return <Spinner />;
   if (error || !data) return <Card><Empty icon={Cpu} title="شماره سریال پیدا نشد" hint={<span className="ltr">{key}</span>} /></Card>;
@@ -56,6 +60,11 @@ export default function UnitPage() {
           <Button variant="outline" icon={Upload} onClick={async () => { const v = await confirm({ title: 'ثبت به‌روزرسانی فریمور', input: { label: 'نسخه جدید', placeholder: '3.3.0', required: true } }); if (v) update.mutate({ fwVersion: v }); }}>به‌روزرسانی فریمور</Button>
           {['in_stock', 'qc_failed', 'in_production'].includes(u.status) && (
             <Button variant="danger" icon={Trash2} onClick={async () => { const r = await confirm({ title: 'اسقاط دستگاه', danger: true, input: { label: 'دلیل', required: true } }); if (r) update.mutate({ status: 'scrapped', reason: r }); }} />
+          )}
+          {can('units') && u.status !== 'in_production' && (
+            <Button variant="ghost" icon={Trash2} loading={remove.isPending} className="text-rose" onClick={async () => {
+              if (await confirm({ title: 'حذف دستگاه', danger: true, confirm: 'حذف', body: UNIT_DELETE_HELP })) remove.mutate(undefined);
+            }}>حذف</Button>
           )}
           {atCustomer && <Button variant="glow" icon={Wrench} onClick={() => navigate(`/service/tickets?new=1&unit=${u.id}`)}>تیکت خدمات</Button>}
         </>} />
@@ -143,6 +152,7 @@ export default function UnitPage() {
           </Card>
         </div>
       </div>
+      <DeleteReport report={report} onClose={() => { const returned = report?.effects?.some((e) => e.reason.includes('برگشت')); setReport(null); if (!returned) navigate('/units'); }} />
     </div>
   );
 }

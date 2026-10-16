@@ -48,7 +48,7 @@ crmRouter.get('/contacts/:id', h((req) => {
     orders: q('SELECT * FROM orders WHERE contact_id = ? ORDER BY created_at DESC', id),
     units: q(
       `SELECT u.*, i.name AS item_name FROM units u JOIN items i ON i.id = u.item_id
-       WHERE u.contact_id = ? ORDER BY u.shipped_at DESC`, id,
+       WHERE u.contact_id = ? AND u.deleted_at IS NULL ORDER BY u.shipped_at DESC`, id,
     ),
     tickets: q('SELECT * FROM tickets WHERE contact_id = ? ORDER BY created_at DESC', id),
     tasks: q("SELECT * FROM tasks WHERE ref_type = 'contact' AND ref_id = ? ORDER BY due_at", id),
@@ -162,7 +162,7 @@ crmRouter.post('/contacts/:id/stage', h((req) => {
 function contactDeleteBlocker(c: Row): string | null {
   if (val<number>('SELECT COUNT(*) FROM orders WHERE contact_id = ?', c.id)) return 'سفارش‌هایش حفظ شد';
   if (val<number>('SELECT COUNT(*) FROM tickets WHERE contact_id = ?', c.id)) return 'تیکت‌هایش حفظ شد';
-  if (val<number>('SELECT COUNT(*) FROM units WHERE contact_id = ?', c.id)) return 'دستگاه‌هایش حفظ شد';
+  if (val<number>('SELECT COUNT(*) FROM units WHERE contact_id = ? AND deleted_at IS NULL', c.id)) return 'دستگاه‌هایش حفظ شد';
   return null;
 }
 
@@ -342,7 +342,7 @@ crmRouter.get('/map', h((req) => {
   const contacts = withInsights(q('SELECT * FROM contacts WHERE org_id = ? AND deleted_at IS NULL', req.user.orgId));
   const units = q(
     `SELECT contact_id, address_id, COUNT(*) AS n FROM units
-     WHERE org_id = ? AND status IN ('installed','shipped','in_repair') GROUP BY contact_id, address_id`, req.user.orgId,
+     WHERE org_id = ? AND deleted_at IS NULL AND status IN ('installed','shipped','in_repair') GROUP BY contact_id, address_id`, req.user.orgId,
   );
   const tickets = q(
     "SELECT contact_id, COUNT(*) AS n FROM tickets WHERE org_id = ? AND status NOT IN ('resolved','closed') GROUP BY contact_id",

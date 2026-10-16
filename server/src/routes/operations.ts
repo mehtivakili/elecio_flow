@@ -6,6 +6,7 @@ import {
   advanceOrder, advanceWorkOrder, allocateOrder, cancelOrder, createTicket, createWorkOrder, createWorkOrdersForOrder,
   kittingNeeds, lineAllocation, recalcOrder, recordQc, releaseUnit, setTicketStatus, setUnitProcessStep, shipOrder, slaState, stageHistory, setStageCrew
 } from '../services/workflow.ts';
+import { removeUnits } from '../services/unitRemoval.ts';
 import { setStage } from '../services/crm.ts';
 import { assignUnits, createLegacySale, createManualUnits } from '../services/legacy.ts';
 import { unitEvent } from '../services/inventory.ts';
@@ -51,7 +52,7 @@ ordersRouter.get('/orders/:id', h((req) => {
     stages: orderStagesFor(req.user.orgId, order.fulfillment, !!order.needsInstallation),
     lines: lineAllocation(order.id),
     address: order.addressId ? one('SELECT * FROM contact_addresses WHERE id = ?', order.addressId) : null,
-    units: q(`SELECT u.*, i.name AS item_name FROM units u JOIN items i ON i.id = u.item_id WHERE u.order_id = ?`, order.id),
+    units: q(`SELECT u.*, i.name AS item_name FROM units u JOIN items i ON i.id = u.item_id WHERE u.order_id = ? AND u.deleted_at IS NULL`, order.id),
     payments: q('SELECT * FROM payments WHERE order_id = ? ORDER BY paid_at', order.id),
     shipments: q('SELECT * FROM shipments WHERE order_id = ? ORDER BY shipped_at', order.id),
     workOrders: q('SELECT * FROM work_orders WHERE order_id = ? ORDER BY created_at', order.id),
@@ -416,19 +417,8 @@ serviceRouter.post('/tickets/bulk-delete', h((req) => bulkDelete(req.user, req.b
   },
 })));
 
-unitsRouter.post('/units/bulk-delete', h((req) => bulkDelete(req.user, req.body?.ids, {
-  table: 'units', entity: 'unit', noun: 'دستگاه',
-  label: (u) => (u.serialUnknown ? `دستگاه بدون سریال (${one('SELECT name FROM items WHERE id = ?', u.itemId)?.name ?? ''})` : u.serial),
-  linkedReason: (u) => {
-    if (u.orderId) return 'به یک سفارش متصل است؛ سابقه‌اش حفظ شد';
-    if (u.workOrderId) return 'از دستور تولید ساخته شده؛ سابقه‌اش حفظ شد';
-    if (val<number>('SELECT COUNT(*) FROM tickets WHERE unit_id = ?', u.id)) return 'تیکت خدمات دارد؛ سابقه‌اش حفظ شد';
-    if (!u.manual && u.warehouseId) return 'در موجودی انبار ثبت است؛ سابقه‌اش حفظ شد';
-    return null;
-  },
-  beforeArchive: (u) => { if (u.status === 'reserved') releaseUnit(req.user, u.id); },
-  remove: (u) => run('DELETE FROM units WHERE id = ?', u.id), // events, QC and steps cascade
-})));
+/** Real removal: stock goes back / ledger records it, orders shrink — see services/unitRemoval.ts. */
+unitsRouter.post('/units/bulk-delete', h((req) => removeUnits(req.user, req.body?.ids)));
 
 serviceRouter.post('/tickets/:id/status', h((req) => setTicketStatus(req.user, req.params.id, req.body?.status, req.body?.resolution)));
 

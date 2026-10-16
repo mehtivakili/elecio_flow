@@ -5,7 +5,7 @@ import clsx from 'clsx';
 import { UNIT_STATUS } from '@shared/defaults';
 import { useApi } from '../../lib/hooks';
 import { useSession } from '../../lib/session';
-import { SelectAllCell, SelectButton, SelectCell, SelectionBar, useSelection } from '../../components/selection';
+import { SelectAllCell, SelectButton, SelectCell, SelectionBar, UNIT_DELETE_HELP, useSelection } from '../../components/selection';
 import { AssignUnitsModal, ManualUnitsModal } from '../../components/legacy';
 import { Button, Card, Empty, Filters, Input, ListCard, PageHeader, Select, Spinner } from '../../components/ui';
 import { UnitStatusPill, WarrantyBadge } from '../../components/domain';
@@ -92,7 +92,7 @@ export default function UnitsPage() {
           </table>
         </Card>
       </>)}
-      <SelectionBar sel={sel} path="/units/bulk-delete" noun="دستگاه"
+      <SelectionBar sel={sel} path="/units/bulk-delete" noun="دستگاه" confirmBody={UNIT_DELETE_HELP}
         extra={isAdmin ? <Button variant="outline" icon={UserCheck} disabled={!sel.count} onClick={() => setAssign([...sel.ids])}><span className="hidden sm:inline">اختصاص به مشتری</span></Button> : undefined} />
       <ManualUnitsModal open={manual} onClose={() => setManual(false)} />
       <AssignUnitsModal ids={assign} onClose={() => setAssign(null)} onDone={sel.stop} />

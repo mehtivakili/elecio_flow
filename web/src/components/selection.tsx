@@ -1,15 +1,17 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { CheckSquare, Trash2, X, AlertTriangle } from 'lucide-react';
+import { CheckSquare, Trash2, X, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import clsx from 'clsx';
 import { post } from '../lib/api';
 import { useAction } from '../lib/hooks';
 import { num } from '../lib/format';
 import { Button, Modal, useConfirm } from './ui';
 
+export const UNIT_DELETE_HELP = 'دستگاه‌ها به‌طور کامل حذف و از مشتری و سفارششان جدا می‌شوند. دستگاهی که از انبار ارسال شده بود به همان انبار برمی‌گردد؛ دستگاه ثبت دستی موجودی را تغییر نمی‌دهد؛ دستگاه داخل انبار از موجودی کم می‌شود. تعداد و مبلغ سفارش مربوط هم کم می‌شود و همه این‌ها در تراکنش‌های انبار ثبت می‌شود.';
+
 type Row = { id: string; name: string; reason: string };
 /** deleted = gone for good; archived = removed from lists but linked history kept; blocked = untouched. */
-export interface BulkDeleteResult { deleted: number; archived: Row[]; blocked: Row[] }
+export interface BulkDeleteResult { deleted: number; archived: Row[]; blocked: Row[]; /** What deleting each item changed (stock, orders…). */ effects?: Row[] }
 
 /** Multi-select state for a list. Ids that leave the list (filtered out, deleted) drop out of the selection. */
 export function useSelection(allIds: string[]) {
@@ -79,7 +81,7 @@ export function SelectCell({ sel, id }: { sel: Selection; id: string }) {
  * for confirmation, runs server-side in one transaction and then lists any records
  * the server refused to delete, with the reason for each.
  */
-export function SelectionBar({ sel, path, noun, extra }: { sel: Selection; path: string; noun: string; extra?: React.ReactNode }) {
+export function SelectionBar({ sel, path, noun, extra, confirmBody }: { sel: Selection; path: string; noun: string; extra?: React.ReactNode; confirmBody?: ReactNode }) {
   const confirm = useConfirm();
   const [report, setReport] = useState<BulkDeleteResult | null>(null);
   const remove = useAction((ids: string[]) => post<BulkDeleteResult>(path, { ids }), {
@@ -87,7 +89,7 @@ export function SelectionBar({ sel, path, noun, extra }: { sel: Selection; path:
       const removed = r.deleted + (r.archived?.length ?? 0);
       return removed ? `${num(removed)} ${noun} حذف شد` : '';
     },
-    onSuccess: (r) => { sel.stop(); if (r.blocked.length || r.archived?.length) setReport(r); },
+    onSuccess: (r) => { sel.stop(); if (r.blocked.length || r.archived?.length || r.effects?.length) setReport(r); },
   });
 
   const run = async () => {
@@ -95,7 +97,7 @@ export function SelectionBar({ sel, path, noun, extra }: { sel: Selection; path:
       title: `حذف ${num(sel.count)} ${noun}`,
       danger: true,
       confirm: 'حذف',
-      body: 'موارد انتخاب‌شده از همه فهرست‌ها حذف می‌شوند. اگر موردی سابقه‌ای دارد (سفارش، دستگاه، گردش انبار…) آن سوابق دست‌نخورده می‌مانند و خود مورد به بایگانی می‌رود تا در صورت نیاز از تنظیمات قابل بازگرداندن باشد.',
+      body: confirmBody ?? 'موارد انتخاب‌شده از همه فهرست‌ها حذف می‌شوند. اگر موردی سابقه‌ای دارد (سفارش، دستگاه، گردش انبار…) آن سوابق دست‌نخورده می‌مانند و خود مورد به بایگانی می‌رود تا در صورت نیاز از تنظیمات قابل بازگرداندن باشد.',
     });
     if (ok) remove.mutate([...sel.ids]);
   };
@@ -116,43 +118,63 @@ export function SelectionBar({ sel, path, noun, extra }: { sel: Selection; path:
         </div>,
         document.body,
       )}
-      <Modal
-        open={!!report}
-        onClose={() => setReport(null)}
-        icon={AlertTriangle}
-        size="sm"
-        title="نتیجه حذف"
-        subtitle={report ? `${num(report.deleted + (report.archived?.length ?? 0))} مورد حذف شد${report.blocked.length ? ` · ${num(report.blocked.length)} مورد حذف نشد` : ''}` : undefined}
-        footer={<Button variant="action" onClick={() => setReport(null)}>متوجه شدم</Button>}
-      >
-        {!!report?.archived?.length && (
-          <section className="mb-4">
-            <h3 className="mb-1 text-sm font-bold text-ink">حذف شد — سوابق مرتبط حفظ شد</h3>
-            <p className="mb-2 text-xs leading-5 text-mist">این موارد از فهرست‌ها حذف شدند ولی چون به اسناد دیگر وصل بودند، آن اسناد سالم ماندند. از «تنظیمات › بایگانی» قابل بازگرداندن هستند.</p>
-            <ul className="space-y-1.5">
-              {report.archived.map((b) => (
-                <li key={b.id} className="flex items-center justify-between gap-3 rounded-xl bg-ink/[0.04] px-3 py-2">
-                  <span className="min-w-0 truncate text-sm text-ink">{b.name}</span>
-                  <span className="shrink-0 text-[11px] text-mint">{b.reason}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-        {!!report?.blocked.length && (
-          <section>
-            <h3 className="mb-2 text-sm font-bold text-ink">حذف نشد</h3>
-            <ul className="space-y-1.5">
-              {report.blocked.map((b) => (
-                <li key={b.id} className="rounded-xl bg-ink/[0.04] px-3 py-2">
-                  <div className="truncate text-sm text-ink">{b.name}</div>
-                  <div className="mt-0.5 text-[11px] leading-5 text-amber">{b.reason}</div>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-      </Modal>
+      <DeleteReport report={report} onClose={() => setReport(null)} />
     </>
+  );
+}
+
+/** Outcome of a delete: what was removed and what it changed, what was archived, what was refused. */
+export function DeleteReport({ report, onClose }: { report: BulkDeleteResult | null; onClose: () => void }) {
+  return (
+    <Modal
+      open={!!report}
+      onClose={onClose}
+      icon={AlertTriangle}
+      size="sm"
+      title="نتیجه حذف"
+      subtitle={report ? `${num(report.deleted + (report.archived?.length ?? 0))} مورد حذف شد${report.blocked.length ? ` · ${num(report.blocked.length)} مورد حذف نشد` : ''}` : undefined}
+      footer={<Button variant="action" onClick={onClose}>متوجه شدم</Button>}
+    >
+      {!!report?.effects?.length && (
+        <section className="mb-4">
+          <h3 className="mb-2 flex items-center gap-1.5 text-sm font-bold text-ink"><CheckCircle2 size={15} className="text-mint" />انجام شد</h3>
+          <ul className="space-y-1.5">
+            {report.effects.map((b) => (
+              <li key={b.id} className="rounded-xl bg-ink/[0.04] px-3 py-2">
+                <div className="truncate text-sm text-ink">{b.name}</div>
+                <div className="mt-0.5 text-[11px] leading-5 text-mint">{b.reason}</div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {!!report?.archived?.length && (
+        <section className="mb-4">
+          <h3 className="mb-1 text-sm font-bold text-ink">حذف شد — سوابق مرتبط حفظ شد</h3>
+          <p className="mb-2 text-xs leading-5 text-mist">این موارد از فهرست‌ها حذف شدند ولی چون به اسناد دیگر وصل بودند، آن اسناد سالم ماندند. از «تنظیمات › بایگانی» قابل بازگرداندن هستند.</p>
+          <ul className="space-y-1.5">
+            {report.archived.map((b) => (
+              <li key={b.id} className="flex items-center justify-between gap-3 rounded-xl bg-ink/[0.04] px-3 py-2">
+                <span className="min-w-0 truncate text-sm text-ink">{b.name}</span>
+                <span className="shrink-0 text-[11px] text-mint">{b.reason}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {!!report?.blocked.length && (
+        <section>
+          <h3 className="mb-2 text-sm font-bold text-ink">حذف نشد</h3>
+          <ul className="space-y-1.5">
+            {report.blocked.map((b) => (
+              <li key={b.id} className="rounded-xl bg-ink/[0.04] px-3 py-2">
+                <div className="truncate text-sm text-ink">{b.name}</div>
+                <div className="mt-0.5 text-[11px] leading-5 text-amber">{b.reason}</div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </Modal>
   );
 }

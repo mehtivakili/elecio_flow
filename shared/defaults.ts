@@ -383,6 +383,8 @@ export const TICKET_STATUS: Record<string, { label: string; color: string }> = {
 export const MOVE_KINDS: Record<string, string> = {
   legacy_sale: 'ثبت فروش قبلی (بدون اثر بر موجودی)',
   manual_unit: 'ثبت دستی دستگاه (بدون اثر بر موجودی)',
+  unit_removed: 'حذف دستگاه (اصلاح ثبت اشتباه)',
+  unit_returned: 'برگشت دستگاه به انبار (اصلاح)',
   receipt: 'ورود به انبار',
   issue: 'خروج از انبار',
   transfer: 'انتقال بین انبار',

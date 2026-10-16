@@ -10,6 +10,7 @@ import { useSession } from '../lib/session';
 import { useToast } from '../lib/toast';
 import { Avatar, Button, Card, Empty, Field, Input, Modal, Pill, Select, Spinner, Toggle, useConfirm } from './ui';
 import { dateTime, num, relative } from '../lib/format';
+import { DeleteReport, UNIT_DELETE_HELP, type BulkDeleteResult } from './selection';
 
 const kb = (n: number) => (n > 1048576 ? `${num(n / 1048576, 1)} مگابایت` : `${num(Math.round(n / 1024))} کیلوبایت`);
 
@@ -93,9 +94,17 @@ export function ArchiveAdmin() {
   const { isAdmin } = useSession();
   const { data = [], isLoading } = useApi<any[]>(isAdmin ? '/archive' : null);
   const restore = useAction(({ type, id }: { type: string; id: string }) => post('/archive/restore', { type, ids: [id] }), { success: 'به فهرست‌ها بازگشت' });
+  const confirm = useConfirm();
+  const [report, setReport] = useState<BulkDeleteResult | null>(null);
+  // Devices archived by the old delete can now be removed for real (orders and stock corrected).
+  const purge = useAction((ids: string[]) => post<BulkDeleteResult>('/units/bulk-delete', { ids }), { onSuccess: setReport });
+  const archivedUnits = data.filter((r) => r.type === 'unit');
   if (!isAdmin) return <Card><Empty icon={Archive} title="فقط مدیر سیستم به بایگانی دسترسی دارد" /></Card>;
   return (
-    <Card title="بایگانی (موارد حذف‌شده با سابقه)" subtitle="مواردی که حذف شدند ولی چون به سفارش، دستگاه یا گردش انبار وصل بودند، سوابقشان حفظ شد" icon={Archive} pad={false} bodyClass="p-2.5 md:p-3">
+    <Card title="بایگانی (موارد حذف‌شده با سابقه)" subtitle="مواردی که حذف شدند ولی چون به سفارش، دستگاه یا گردش انبار وصل بودند، سوابقشان حفظ شد" icon={Archive} pad={false} bodyClass="p-2.5 md:p-3"
+      actions={archivedUnits.length > 1 && <Button size="sm" variant="danger" icon={Trash2} loading={purge.isPending} onClick={async () => {
+        if (await confirm({ title: `حذف کامل ${num(archivedUnits.length)} دستگاه بایگانی‌شده`, danger: true, confirm: 'حذف کامل', body: UNIT_DELETE_HELP })) purge.mutate(archivedUnits.map((r) => r.id));
+      }}>حذف کامل همه دستگاه‌ها</Button>}>
       {isLoading ? <Spinner /> : !data.length ? <Empty icon={Archive} title="بایگانی خالی است" /> : (
         <ul className="space-y-1.5">
           {data.map((r) => (
@@ -106,10 +115,15 @@ export function ArchiveAdmin() {
                 <div className="truncate text-[11.5px] text-mist">{r.subtitle || '—'} · حذف {relative(r.deletedAt)}</div>
               </div>
               <Button size="sm" variant="outline" icon={RotateCcw} loading={restore.isPending} onClick={() => restore.mutate({ type: r.type, id: r.id })}><span className="hidden sm:inline">بازگرداندن</span></Button>
+              {r.type === 'unit' && (
+                <Button size="sm" variant="ghost" icon={Trash2} className="text-rose" aria-label="حذف کامل" title="حذف کامل و اصلاح سفارش/انبار" loading={purge.isPending}
+                  onClick={async () => { if (await confirm({ title: `حذف کامل ${r.title}`, danger: true, confirm: 'حذف کامل', body: UNIT_DELETE_HELP })) purge.mutate([r.id]); }} />
+              )}
             </li>
           ))}
         </ul>
       )}
+      <DeleteReport report={report} onClose={() => setReport(null)} />
     </Card>
   );
 }
