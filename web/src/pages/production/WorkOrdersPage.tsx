@@ -11,14 +11,16 @@ import { ItemPicker, PriorityPill, UserPicker, WoStagePill } from '../../compone
 import { date, num, relative } from '../../lib/format';
 
 export default function WorkOrdersPage() {
-  const { settings } = useSession();
+  const { settings, userName } = useSession();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const { data = [], isLoading } = useApi<any[]>('/work-orders');
-  const [tab, setTab] = useState<'board' | 'done'>('board');
+  const [tab, setTab] = useState<'board' | 'mine' | 'done'>('board');
   const [creating, setCreating] = useState(false);
   useEffect(() => { if (params.get('new') === '1') { setCreating(true); params.delete('new'); setParams(params, { replace: true }); } }, [params, setParams]);
-  const open = data.filter((w) => w.status === 'open');
+  const allOpen = data.filter((w) => w.status === 'open');
+  const mine = allOpen.filter((w) => !!w.mine);
+  const open = tab === 'mine' ? mine : allOpen;
   const stages = settings.workOrderStages.filter((s) => !s.final);
   const [boardStage, setBoardStage] = useState<string | null>(null);
   const stageCounts = stages.map((s) => ({ key: s.key, label: s.label, color: s.color, count: open.filter((w) => w.stage === s.key).length }));
@@ -28,10 +30,10 @@ export default function WorkOrdersPage() {
     <div>
       <PageHeader icon={Factory} title="دستورهای تولید" subtitle="کیتینگ ← مونتاژ ← فریمور ← تست و QC ← بسته‌بندی ← ورود به انبار، با شماره‌سریال برای هر دستگاه"
         actions={<>
-          <Tabs value={tab} onChange={setTab} tabs={[{ key: 'board', label: 'خط تولید', count: open.length }, { key: 'done', label: 'تکمیل‌شده' }]} />
+          <Tabs value={tab} onChange={setTab} tabs={[{ key: 'board', label: 'خط تولید', count: allOpen.length }, { key: 'mine', label: 'کارهای من', count: mine.length }, { key: 'done', label: 'تکمیل‌شده' }]} />
         </>}
         fab={{ label: 'دستور تولید', icon: Plus, onClick: () => setCreating(true) }} />
-      {isLoading ? <Spinner /> : tab === 'board' ? (<>
+      {isLoading ? <Spinner /> : tab !== 'done' ? (<>
         <StageSwitch stages={stageCounts} value={shownStage} onChange={setBoardStage} />
         <div className="board flex gap-4 overflow-x-auto pb-3">
           {stages.map((s) => {
@@ -50,7 +52,7 @@ export default function WorkOrdersPage() {
                       {w.orderNumber && <div className="mt-1 flex items-center gap-1 text-[11px] text-lilac"><ShoppingCart size={11} />{w.contactName}</div>}
                       {s.key === 'testing' && <div className="mt-2"><Progress value={(w.qcPassed / w.qty) * 100} color="#0FD69D" /><div className="num mt-1 text-[10px] text-mist">QC: {num(w.qcPassed)} از {num(w.qty)}</div></div>}
                       <div className="mt-2 flex items-center justify-between text-[11px] text-mist">
-                        <span>{w.assigneeName ?? '—'}</span>
+                        <span className="min-w-0 truncate" title={(w.stageCrew ?? []).map(userName).join('، ')}>{w.stageCrew?.length ? `${userName(w.stageCrew[0])}${w.stageCrew.length > 1 ? ` +${num(w.stageCrew.length - 1)}` : ''}` : w.assigneeName ?? '—'}</span>
                         <span className={clsx('flex items-center gap-1', w.late && 'text-rose')}>{w.late && <AlertTriangle size={11} />}{relative(w.stageEnteredAt)}</span>
                       </div>
                     </Link>

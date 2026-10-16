@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
-  ShoppingCart, ArrowLeft, Pencil, Printer, Ban, PackageCheck, Truck, Wallet, Plus, Cpu, Factory, LifeBuoy, Lock,
+  ShoppingCart, ArrowLeft, Pencil, FileText, ReceiptText, Ban, PackageCheck, Truck, Wallet, Plus, Cpu, Factory, LifeBuoy, Lock,
   ShieldAlert, Unlink, MapPin, Phone, History, Undo2,
 } from 'lucide-react';
 import clsx from 'clsx';
@@ -15,6 +15,8 @@ import { DateInput } from '../../components/inputs';
 import { OrderStagePill, PriorityPill, TicketStatusPill, UnitStatusPill, WoStagePill } from '../../components/domain';
 import { StageTrack, Timeline } from '../../components/flow';
 import { OrderFormModal } from '../../components/orders';
+import { InvoiceDialog, type InvoiceKind } from '../../components/invoice';
+import { DocumentsCard } from '../../components/documents';
 import { date, dateTime, money, num } from '../../lib/format';
 
 const GATE_HINT: Record<string, string> = {
@@ -29,13 +31,16 @@ export default function OrderPage() {
   const navigate = useNavigate();
   const confirm = useConfirm();
   const toast = useToast();
-  const { settings, userName, me } = useSession();
+  const { settings, userName, isAdmin } = useSession();
   const { data, isLoading } = useApi<any>(`/orders/${id}`);
   const [blocked, setBlocked] = useState<{ to?: string; error: ApiError } | null>(null);
   const [forceNote, setForceNote] = useState('');
   const [editing, setEditing] = useState(false);
   const [paying, setPaying] = useState(false);
   const [shipping, setShipping] = useState(false);
+  const [params, setParams] = useSearchParams();
+  const docKind = params.get('doc') as InvoiceKind | null;
+  const openDoc = (kind: InvoiceKind | null) => setParams((p) => { if (kind) p.set('doc', kind); else p.delete('doc'); return p; }, { replace: true });
   const cur = settings.company.currency;
 
   const advance = useAction(
@@ -61,7 +66,6 @@ export default function OrderPage() {
   const missing = data.lines.filter((l: any) => l.itemKind !== 'service' && l.missing > 0);
   const paidPct = o.total ? Math.round((o.paid / o.total) * 100) : 0;
   const depositNeed = Math.round(o.total * settings.company.depositPct / 100);
-  const isAdmin = ['owner', 'admin'].includes(me.role);
 
   const history = [
     ...data.history.map((h: any) => ({
@@ -74,16 +78,18 @@ export default function OrderPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
+      <PageHeader hero eyebrow="سفارش فروش"
         icon={ShoppingCart}
         title={<span className="flex items-center gap-3"><span className="ltr">{o.number}</span><OrderStagePill stage={o.stage} status={o.status} /><PriorityPill priority={o.priority} /></span>}
         subtitle={<span>
           <Link to={`/crm/contacts/${o.contactId}`} className="text-frost hover:text-iris">{o.contactName}</Link>
           {' · '}{o.fulfillment === 'mto' ? 'تولید بر اساس سفارش' : 'فروش از موجودی'}{o.needsInstallation ? ' · با نصب' : ''}
           {' · '}ثبت {date(o.createdAt)}
+          {o.invoiceNumber && <>{' · '}فاکتور <span className="ltr">{o.invoiceNumber}</span> ({date(o.invoicedAt)})</>}
         </span>}
         actions={<>
-          <Button variant="ghost" icon={Printer} onClick={() => window.print()}>چاپ</Button>
+          <Button variant="outline" icon={FileText} onClick={() => openDoc('proforma')}>پیش‌فاکتور</Button>
+          {o.status !== 'cancelled' && <Button variant="outline" icon={ReceiptText} onClick={() => openDoc('invoice')}>{o.invoiceNumber ? `فاکتور ${o.invoiceNumber}` : 'فاکتور فروش'}</Button>}
           {open && o.stageIndex <= 1 && <Button variant="ghost" icon={Pencil} onClick={() => setEditing(true)}>ویرایش اقلام</Button>}
           {open && (
             <Button variant="danger" icon={Ban} onClick={async () => {
@@ -102,6 +108,16 @@ export default function OrderPage() {
         </>}
       />
 
+      {!!o.legacy && (
+        <div className="flex items-start gap-2.5 rounded-2xl border border-lilac/30 bg-lilac/[0.08] px-4 py-3 text-sm leading-6 text-frost">
+          <History size={18} className="mt-0.5 shrink-0 text-lilac" />
+          <div>
+            <b className="text-ink">فروش قبلی — ثبت دستی</b>
+            {' · '}{o.legacyDate ? `تاریخ فروش ${date(o.legacyDate)}` : 'بدون تاریخ'}
+            <div className="text-xs text-mist">این سفارش از موجودی انبار کم نکرده؛ در تراکنش‌های انبار با برچسب «فروش قبلی» ثبت شده است.</div>
+          </div>
+        </div>
+      )}
       <Card pad={false} bodyClass="p-5">
         <StageTrack stages={stages} current={o.stage} history={data.history} closed={o.status === 'done'} onPick={open && isAdmin ? (key) => advance.mutate({ to: key }) : undefined} />
         {open && current?.gate && (
@@ -151,7 +167,7 @@ export default function OrderPage() {
                 <thead><tr><th>سریال</th><th>محصول</th><th>وضعیت</th><th>فریمور</th><th>گارانتی تا</th><th /></tr></thead>
                 <tbody>{data.units.map((u: any) => (
                   <tr key={u.id}>
-                    <td><Link to={`/units/${u.serial}`} className="ltr font-mono text-xs text-ink hover:text-iris">{u.serial}</Link></td>
+                    <td><Link to={`/units/${u.id}`} className="ltr font-mono text-xs text-ink hover:text-iris">{u.serialUnknown ? <span className="font-sans text-amber">بدون سریال</span> : u.serial}</Link></td>
                     <td className="text-sm">{u.itemName}</td>
                     <td><UnitStatusPill status={u.status} /></td>
                     <td className="ltr text-right text-xs">{u.fwVersion || '—'}</td>
@@ -221,6 +237,7 @@ export default function OrderPage() {
             )}
           </Card>
 
+          <DocumentsCard scope={{ orderId: o.id }} side="sales" compact title="اسناد و فاکتورها" />
           <Card title="مشتری و محل تحویل" icon={MapPin}>
             <KV cols={1} items={[
               ['مشتری', <Link to={`/crm/contacts/${o.contactId}`} className="hover:text-iris">{o.contactName}</Link>],
@@ -254,6 +271,7 @@ export default function OrderPage() {
       <PaymentModal open={paying} onClose={() => setPaying(false)} orderId={o.id} balance={o.balance} />
       <ShipModal open={shipping} onClose={() => setShipping(false)} orderId={o.id} />
       <OrderFormModal open={editing} onClose={() => setEditing(false)} order={o} lines={data.lines} />
+      <InvoiceDialog orderId={o.id} kind={docKind ?? 'proforma'} open={!!docKind} onClose={() => openDoc(null)} />
     </div>
   );
 }

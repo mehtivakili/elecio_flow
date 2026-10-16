@@ -1,8 +1,8 @@
-import type { NextFunction, Request, Response, RequestHandler } from 'express';
+import type { NextFunction, Request, Response, RequestHandler, Router } from 'express';
 import jwt from 'jsonwebtoken';
 import { one, run, tx, uid, getDb } from './db.ts';
 import {
-  ELECIO_DEFAULTS, canWrite, type Module, type Role, type StageDef, type WorkspaceSettings,
+  ELECIO_DEFAULTS, canWrite, effectiveRoles, isAdminRole, type Module, type Role, type StageDef, type WorkspaceSettings,
 } from '../../shared/defaults.ts';
 import { toJalali } from '../../shared/jalali.ts';
 
@@ -17,9 +17,14 @@ export class HttpError extends Error {
 export interface AuthUser {
   id: string;
   orgId: string;
+  /** Primary role (shown in the UI). */
   role: Role;
+  /** Every role the user holds — permissions are the union of these. */
+  roles: Role[];
   fullName: string;
 }
+
+export const isAdmin = (user: Pick<AuthUser, 'roles'>) => isAdminRole(user.roles);
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -48,9 +53,9 @@ export function requireAuth(req: Request, _res: Response, next: NextFunction) {
   const token = header.startsWith('Bearer ') ? header.slice(7) : '';
   try {
     const payload = jwt.verify(token, JWT_SECRET) as { sub: string };
-    const user = one('SELECT id, org_id, role, full_name, active FROM users WHERE id = ?', payload.sub);
+    const user = one('SELECT id, org_id, role, roles_json, full_name, active FROM users WHERE id = ?', payload.sub);
     if (!user || !user.active) throw new Error('inactive');
-    req.user = { id: user.id, orgId: user.orgId, role: user.role, fullName: user.fullName };
+    req.user = { id: user.id, orgId: user.orgId, role: user.role, roles: effectiveRoles(user.role, user.roles), fullName: user.fullName };
     next();
   } catch {
     next(new HttpError(401, 'نشست شما منقضی شده است، دوباره وارد شوید'));
@@ -60,11 +65,25 @@ export function requireAuth(req: Request, _res: Response, next: NextFunction) {
 /** Reads are open to every signed-in role; writes need the module in the role's list. */
 export const guard = (module: Module): RequestHandler => (req, _res, next) => {
   if (req.method === 'GET') return next();
-  if (!canWrite(req.user.role, module)) {
+  if (!canWrite(req.user.roles, module)) {
     return next(new HttpError(403, 'شما مجوز تغییر در این بخش را ندارید'));
   }
   next();
 };
+
+/**
+ * Every router is mounted on /api, so a plain `router.use(guard(...))` would also run for
+ * requests meant for the routers after it (a warehouse user adding an item was stopped by
+ * the CRM guard). This guard only applies to the router's own routes.
+ */
+export function guardRouter(router: Router, module: Module) {
+  router.use((req, res, next) => {
+    if (req.method === 'GET') return next();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const own = (router.stack as any[]).some((layer) => layer.route && layer.route._handles_method(req.method) && layer.match(req.path));
+    return own ? guard(module)(req, res, next) : next();
+  });
+}
 
 export function errorHandler(err: any, _req: Request, res: Response, _next: NextFunction) {
   const status = err instanceof HttpError ? err.status : 500;
@@ -78,6 +97,9 @@ export function errorHandler(err: any, _req: Request, res: Response, _next: Next
 /* ───────────── Workspace settings ───────────── */
 
 const settingsCache = new Map<string, WorkspaceSettings>();
+
+/** After the database file is swapped (restore/import) cached settings belong to the old file. */
+export function clearSettingsCache() { settingsCache.clear(); }
 
 export function getSettings(orgId: string): WorkspaceSettings {
   const cached = settingsCache.get(orgId);
@@ -159,19 +181,34 @@ export function mustFind(table: string, id: string, orgId: string, label = 'رک
   return row;
 }
 
+/** Owner / admin only (manual historical entries, backups, restoring archived records). */
+export const adminOnly: RequestHandler = (req, _res, next) => {
+  if (!isAdmin(req.user)) return next(new HttpError(403, 'این بخش فقط برای مدیر سیستم در دسترس است'));
+  next();
+};
+
 export const DAY = 86_400_000;
 export const HOUR = 3_600_000;
 
-/* ───────────── Bulk delete ───────────── */
+/* ───────────── Delete / archive ───────────── */
 
-export interface BulkDeleteResult { deleted: number; blocked: { id: string; name: string; reason: string }[] }
+export interface BulkDeleteResult {
+  deleted: number;
+  /** Still referenced elsewhere, so hidden (archived) instead — history stays intact. */
+  archived: { id: string; name: string; reason: string }[];
+  /** Could not be removed at all (rare: a hard safety rule). */
+  blocked: { id: string; name: string; reason: string }[];
+}
 
 /**
- * Deletes the selected records of one table in a single transaction. Every row is
- * re-read inside the caller's org, then `check` decides whether removing it would
- * break something (linked orders, stock history…). Rows that fail the check are
- * left untouched and reported back with the reason; the rest go through `remove`
- * and are written to the activity log.
+ * Deletes the selected records of one table in a single transaction.
+ *
+ * Rows nothing else points at are removed for good. Rows that other documents
+ * still reference (`linkedReason` returns why) are *archived* instead: they get a
+ * `deleted_at` stamp, disappear from every list, picker and report, but the orders,
+ * stock moves, devices and tickets that mention them keep working and keep showing
+ * the name. Archived rows can be restored from Settings → Archive. `beforeArchive`
+ * lets a module tidy up first (e.g. cancel an open order so its stock is released).
  */
 export function bulkDelete(
   user: AuthUser,
@@ -181,7 +218,9 @@ export function bulkDelete(
     entity: string;
     noun: string;
     label: (row: any) => string;
-    check?: (row: any) => string | null;
+    block?: (row: any) => string | null;
+    linkedReason?: (row: any) => string | null;
+    beforeArchive?: (row: any) => void;
     remove: (row: any) => void;
   },
 ): BulkDeleteResult {
@@ -189,14 +228,25 @@ export function bulkDelete(
   if (rawIds.length > 500) throw new HttpError(400, 'در هر بار حداکثر ۵۰۰ مورد قابل حذف است');
   const ids = [...new Set(rawIds.map(String))];
   return tx(() => {
-    const result: BulkDeleteResult = { deleted: 0, blocked: [] };
+    const result: BulkDeleteResult = { deleted: 0, archived: [], blocked: [] };
     for (const id of ids) {
       const row = one(`SELECT * FROM ${opts.table} WHERE id = ? AND org_id = ?`, id, user.orgId);
       if (!row) continue;
-      const reason = opts.check?.(row) ?? null;
-      if (reason) { result.blocked.push({ id, name: opts.label(row), reason }); continue; }
+      const name = opts.label(row);
+      const blocked = opts.block?.(row) ?? null;
+      if (blocked) { result.blocked.push({ id, name, reason: blocked }); continue; }
+      const linked = opts.linkedReason?.(row) ?? null;
+      if (linked) {
+        if (!row.deletedAt) {
+          opts.beforeArchive?.(row);
+          run(`UPDATE ${opts.table} SET deleted_at = ? WHERE id = ?`, Date.now(), id);
+          logActivity(user, opts.entity, id, 'archive', `حذف (بایگانی) ${opts.noun} ${name}`);
+        }
+        result.archived.push({ id, name, reason: linked });
+        continue;
+      }
       opts.remove(row);
-      logActivity(user, opts.entity, id, 'delete', `حذف ${opts.noun} ${opts.label(row)}`);
+      logActivity(user, opts.entity, id, 'delete', `حذف ${opts.noun} ${name}`);
       result.deleted++;
     }
     return result;

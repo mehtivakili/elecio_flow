@@ -1,12 +1,12 @@
 import { Router } from 'express';
 import { insert, normalizeSearch, one, q, run, tx, uid, update, val, type Row } from '../db.ts';
-import { DAY, HttpError, bulkDelete, getSettings, guard, h, logActivity, mustFind, unlinkTasks } from '../core.ts';
+import { DAY, HttpError, bulkDelete, getSettings, guard, h, logActivity, mustFind, unlinkTasks, guardRouter } from '../core.ts';
 import {
-  buildContactSearch, hydrateContacts, nextBestAction, rescore, setStage, syncContactMeta,
+  buildContactSearch, hydrateContacts, nextBestAction, rescore, setStage, syncContactMeta, syncContactPeople,
 } from '../services/crm.ts';
 
 export const crmRouter = Router();
-crmRouter.use(guard('crm'));
+guardRouter(crmRouter, 'crm');
 
 const CONTACT_COLUMNS = [
   'owner_id', 'kind', 'name', 'company', 'job_title', 'phones_json', 'emails_json', 'website', 'lead_source',
@@ -22,7 +22,7 @@ function withInsights(rows: Row[]) {
 crmRouter.get('/contacts', h((req) => {
   const { search, stage, source, owner, tag, province, temp, customerType } = req.query as Record<string, string>;
   const s = getSettings(req.user.orgId).scoring;
-  let sql = 'SELECT * FROM contacts c WHERE org_id = ?';
+  let sql = 'SELECT * FROM contacts c WHERE org_id = ? AND deleted_at IS NULL';
   const params: (string | number)[] = [req.user.orgId];
   if (search) { sql += ' AND normalize_search(search) LIKE ?'; params.push(`%${normalizeSearch(search)}%`); }
   if (stage) { sql += ' AND stage = ?'; params.push(stage); }
@@ -61,7 +61,7 @@ crmRouter.get('/contacts/:id', h((req) => {
 function findDuplicates(orgId: string, phones: Row[], excludeId?: string) {
   const digits = phones.map((p) => normalizeSearch(p.value).replace(/\D/g, '').slice(-10)).filter((d) => d.length >= 7);
   if (!digits.length) return [];
-  return q('SELECT id, name, phones_json FROM contacts WHERE org_id = ? AND id != ?', orgId, excludeId ?? '')
+  return q('SELECT id, name, phones_json FROM contacts WHERE org_id = ? AND id != ? AND deleted_at IS NULL', orgId, excludeId ?? '')
     .filter((c) => (c.phones ?? []).some((p: Row) => digits.includes(normalizeSearch(p.value).replace(/\D/g, '').slice(-10))))
     .map((c) => ({ id: c.id, name: c.name }));
 }
@@ -98,6 +98,16 @@ crmRouter.post('/contacts', h((req) => {
     }, ['id', 'org_id', 'stage', 'stage_changed_at', 'converted_at', 'search', 'created_at', 'updated_at', ...CONTACT_COLUMNS]);
     saveAddresses(req.user.orgId, id, body.addresses);
     saveTags(id, body.tags);
+    // People of the company: given explicitly, or the single contact person typed in the form.
+    const people: Row[] = Array.isArray(body.people) && body.people.length
+      ? body.people
+      : String(body.company ?? '').trim() ? [{ name: body.company, title: body.jobTitle, phones: body.phones ?? [] }] : [];
+    people.forEach((raw, index) => {
+      const person = readPerson(raw);
+      insert('contact_people', { ...person, isPrimary: index === 0 ? 1 : 0, id: uid('ppl'), orgId: req.user.orgId, contactId: id, sortOrder: index, createdAt: now },
+        ['id', 'org_id', 'contact_id', 'created_at', ...PERSON_COLUMNS]);
+    });
+    if (people.length) syncContactPeople(id);
     rescore(id);
     logActivity(req.user, 'contact', id, 'create', `مخاطب جدید: ${body.name}`);
   });
@@ -121,6 +131,17 @@ crmRouter.put('/contacts/:id', h((req) => {
     update('contacts', existing.id, req.user.orgId, { ...body, search: buildContactSearch(merged, addresses), updatedAt: Date.now() },
       [...CONTACT_COLUMNS, 'search', 'updated_at']);
     if (body.tags) saveTags(existing.id, body.tags);
+    // The form's "contact person" field edits the primary person (or creates one).
+    if ('company' in body && String(body.company ?? '').trim()) {
+      const primary = one('SELECT * FROM contact_people WHERE contact_id = ? ORDER BY is_primary DESC, sort_order LIMIT 1', existing.id);
+      if (primary) run('UPDATE contact_people SET name = ?, title = COALESCE(?, title) WHERE id = ?', String(body.company).trim(), body.jobTitle ?? null, primary.id);
+      else {
+        insert('contact_people', { ...readPerson({ name: body.company, title: body.jobTitle, phones: body.phones ?? existing.phones }), isPrimary: 1,
+          id: uid('ppl'), orgId: req.user.orgId, contactId: existing.id, sortOrder: 0, createdAt: Date.now() },
+        ['id', 'org_id', 'contact_id', 'created_at', ...PERSON_COLUMNS]);
+      }
+    }
+    syncContactPeople(existing.id);
     if (body.stage && body.stage !== existing.stage) setStage(existing.id, body.stage, body.lostReason);
     rescore(existing.id);
   });
@@ -139,9 +160,9 @@ crmRouter.post('/contacts/:id/stage', h((req) => {
 
 /** Why a contact can't be deleted (it anchors sales, service or installed devices), or null. */
 function contactDeleteBlocker(c: Row): string | null {
-  if (val<number>('SELECT COUNT(*) FROM orders WHERE contact_id = ?', c.id)) return 'سفارش فروش ثبت‌شده دارد';
-  if (val<number>('SELECT COUNT(*) FROM tickets WHERE contact_id = ?', c.id)) return 'تیکت خدمات دارد';
-  if (val<number>('SELECT COUNT(*) FROM units WHERE contact_id = ?', c.id)) return 'دستگاه نصب‌شده یا رزروشده دارد';
+  if (val<number>('SELECT COUNT(*) FROM orders WHERE contact_id = ?', c.id)) return 'سفارش‌هایش حفظ شد';
+  if (val<number>('SELECT COUNT(*) FROM tickets WHERE contact_id = ?', c.id)) return 'تیکت‌هایش حفظ شد';
+  if (val<number>('SELECT COUNT(*) FROM units WHERE contact_id = ?', c.id)) return 'دستگاه‌هایش حفظ شد';
   return null;
 }
 
@@ -152,20 +173,76 @@ function removeContact(c: Row) {
   run('DELETE FROM contacts WHERE id = ?', c.id);
 }
 
-crmRouter.delete('/contacts/:id', h((req) => {
+const CONTACT_DELETE = {
+  table: 'contacts', entity: 'contact', noun: 'مخاطب',
+  label: (c: Row) => c.name,
+  linkedReason: contactDeleteBlocker,
+  remove: removeContact,
+};
+
+crmRouter.delete('/contacts/:id', h((req) => bulkDelete(req.user, [req.params.id], CONTACT_DELETE)));
+
+crmRouter.post('/contacts/bulk-delete', h((req) => bulkDelete(req.user, req.body?.ids, CONTACT_DELETE)));
+
+/* ───────────── Contact people (several people / roles per company) ───────────── */
+
+const PERSON_COLUMNS = ['name', 'title', 'department', 'buying_role', 'phones_json', 'email', 'rating', 'is_primary', 'notes', 'sort_order'];
+
+function readPerson(body: Row) {
+  const name = String(body?.name ?? '').trim();
+  if (!name) throw new HttpError(400, 'نام شخص الزامی است');
+  const phones = (Array.isArray(body.phones) ? body.phones : [])
+    .map((p: Row) => ({ label: String(p?.label ?? 'موبایل'), value: String(p?.value ?? '').trim() }))
+    .filter((p: Row) => p.value);
+  return {
+    name, title: String(body.title ?? '').trim(), department: String(body.department ?? '').trim(),
+    buyingRole: String(body.buyingRole ?? ''), phones, email: String(body.email ?? '').trim(),
+    rating: Math.max(0, Math.min(5, Math.round(Number(body.rating) || 0))), isPrimary: body.isPrimary ? 1 : 0,
+    notes: String(body.notes ?? ''),
+  };
+}
+
+function setPrimary(contactId: string, personId: string) {
+  run('UPDATE contact_people SET is_primary = CASE WHEN id = ? THEN 1 ELSE 0 END WHERE contact_id = ?', personId, contactId);
+}
+
+crmRouter.post('/contacts/:id/people', h((req) => {
   const c = mustFind('contacts', req.params.id, req.user.orgId, 'مخاطب');
-  const blocker = contactDeleteBlocker(c);
-  if (blocker) throw new HttpError(409, `این مخاطب ${blocker} و قابل حذف نیست`);
-  tx(() => removeContact(c));
-  logActivity(req.user, 'contact', c.id, 'delete', `حذف مخاطب ${c.name}`);
+  const person = readPerson(req.body ?? {});
+  const id = uid('ppl');
+  tx(() => {
+    const count = val<number>('SELECT COUNT(*) FROM contact_people WHERE contact_id = ?', c.id);
+    insert('contact_people', { ...person, id, orgId: req.user.orgId, contactId: c.id, sortOrder: count, createdAt: Date.now() },
+      ['id', 'org_id', 'contact_id', 'created_at', ...PERSON_COLUMNS]);
+    if (person.isPrimary || count === 0) setPrimary(c.id, id);
+    syncContactPeople(c.id);
+    logActivity(req.user, 'contact', c.id, 'person', `افزودن ${person.name} به ${c.name}`);
+  });
+  return { id };
 }));
 
-crmRouter.post('/contacts/bulk-delete', h((req) => bulkDelete(req.user, req.body?.ids, {
-  table: 'contacts', entity: 'contact', noun: 'مخاطب',
-  label: (c) => c.name,
-  check: contactDeleteBlocker,
-  remove: removeContact,
-})));
+crmRouter.put('/people/:id', h((req) => {
+  const p = mustFind('contact_people', req.params.id, req.user.orgId, 'شخص');
+  const person = readPerson({ ...p, ...req.body });
+  tx(() => {
+    update('contact_people', p.id, req.user.orgId, person, PERSON_COLUMNS.filter((c) => c !== 'sort_order'));
+    if (person.isPrimary) setPrimary(p.contactId, p.id);
+    syncContactPeople(p.contactId);
+  });
+  return { id: p.id };
+}));
+
+crmRouter.delete('/people/:id', h((req) => {
+  const p = mustFind('contact_people', req.params.id, req.user.orgId, 'شخص');
+  tx(() => {
+    run('DELETE FROM contact_people WHERE id = ?', p.id);
+    if (p.isPrimary) {
+      const next = one('SELECT id FROM contact_people WHERE contact_id = ? ORDER BY sort_order, created_at LIMIT 1', p.contactId);
+      if (next) setPrimary(p.contactId, next.id);
+    }
+    syncContactPeople(p.contactId);
+  });
+}));
 
 /* ───────────── Interactions & follow-ups ───────────── */
 
@@ -241,9 +318,9 @@ crmRouter.post('/followups/:id/:action', h((req) => {
 /* ───────────── Pipeline, hot leads, map ───────────── */
 
 crmRouter.get('/pipeline', h((req) => {
-  const contacts = withInsights(q('SELECT * FROM contacts WHERE org_id = ? ORDER BY score DESC', req.user.orgId));
+  const contacts = withInsights(q('SELECT * FROM contacts WHERE org_id = ? AND deleted_at IS NULL ORDER BY score DESC', req.user.orgId));
   const openValue = q(
-    "SELECT contact_id, SUM(total) AS v FROM orders WHERE org_id = ? AND status = 'open' GROUP BY contact_id", req.user.orgId,
+    "SELECT contact_id, SUM(total) AS v FROM orders WHERE org_id = ? AND status = 'open' AND deleted_at IS NULL GROUP BY contact_id", req.user.orgId,
   );
   const valueMap = Object.fromEntries(openValue.map((r) => [r.contactId, r.v]));
   return contacts.map((c) => ({ ...c, openOrderValue: valueMap[c.id] ?? 0 }));
@@ -252,7 +329,7 @@ crmRouter.get('/pipeline', h((req) => {
 crmRouter.get('/hot-leads', h((req) => {
   const min = Number(req.query.min) || getSettings(req.user.orgId).scoring.warmThreshold;
   return withInsights(q(
-    "SELECT * FROM contacts WHERE org_id = ? AND score >= ? AND stage NOT IN ('customer','lost') ORDER BY score DESC",
+    "SELECT * FROM contacts WHERE org_id = ? AND deleted_at IS NULL AND score >= ? AND stage NOT IN ('customer','lost') ORDER BY score DESC",
     req.user.orgId, min,
   ));
 }));
@@ -262,7 +339,7 @@ crmRouter.get('/hot-leads', h((req) => {
  * the devices installed at each site, and open service tickets per site.
  */
 crmRouter.get('/map', h((req) => {
-  const contacts = withInsights(q('SELECT * FROM contacts WHERE org_id = ?', req.user.orgId));
+  const contacts = withInsights(q('SELECT * FROM contacts WHERE org_id = ? AND deleted_at IS NULL', req.user.orgId));
   const units = q(
     `SELECT contact_id, address_id, COUNT(*) AS n FROM units
      WHERE org_id = ? AND status IN ('installed','shipped','in_repair') GROUP BY contact_id, address_id`, req.user.orgId,

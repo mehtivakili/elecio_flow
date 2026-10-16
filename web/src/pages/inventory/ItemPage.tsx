@@ -31,7 +31,7 @@ export default function ItemPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader icon={Boxes}
+      <PageHeader hero eyebrow="کالا و قطعه" icon={Boxes}
         title={<span className="flex items-center gap-2">{i.name}{i.serialized ? <Pill color="#779BE7">سریالی</Pill> : null}{i.needsReorder && <Pill color="#FF499E">زیر نقطه سفارش</Pill>}</span>}
         subtitle={<span className="ltr">{i.sku}</span>}
         actions={<Button variant="outline" icon={Pencil} onClick={() => setEditing(i)}>ویرایش</Button>} />

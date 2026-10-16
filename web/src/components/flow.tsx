@@ -5,7 +5,7 @@ import type { StageDef } from '@shared/defaults';
 import { dateTime, isolateCodes, num, relative } from '../lib/format';
 import { useIsMobile } from '../lib/media';
 
-const GATE_LABELS: Record<string, string> = {
+export const GATE_LABELS: Record<string, string> = {
   deposit: 'نیازمند پیش‌پرداخت',
   full_payment: 'نیازمند تسویه کامل',
   allocation: 'نیازمند تخصیص کالا',

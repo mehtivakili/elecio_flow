@@ -1,18 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { ShoppingCart, FilePlus2, Rows3, Columns3, AlertTriangle } from 'lucide-react';
+import { ShoppingCart, FilePlus2, Rows3, Columns3, AlertTriangle, History } from 'lucide-react';
 import clsx from 'clsx';
 import { useApi } from '../../lib/hooks';
 import { useSession } from '../../lib/session';
 import { Button, pickStage, StageSwitch, Card, Empty, Filters, ListCard, PageHeader, Progress, SearchBox, Select, Spinner, Stat, Tabs } from '../../components/ui';
 import { OrderStagePill, PriorityPill } from '../../components/domain';
 import { OrderFormModal } from '../../components/orders';
+import { LegacySaleModal } from '../../components/legacy';
 import { SelectAllCell, SelectButton, SelectCell, SelectionBar, useSelection } from '../../components/selection';
 import { compactMoney, date, money, num, relative } from '../../lib/format';
 import { matchesSearch } from '@shared/search';
 
 export default function OrdersPage() {
-  const { settings } = useSession();
+  const { settings, isAdmin } = useSession();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const { data = [], isLoading } = useApi<any[]>('/orders');
@@ -21,11 +22,15 @@ export default function OrdersPage() {
   const [search, setSearch] = useState('');
   const [creating, setCreating] = useState<string | null | false>(false);
   const [boardStage, setBoardStage] = useState<string | null>(null);
+  const [legacy, setLegacy] = useState(false);
+  const [thenDoc, setThenDoc] = useState<string | null>(null);
   const stage = params.get('stage') ?? '';
   useEffect(() => {
     if (params.get('new') === '1') {
       setCreating(params.get('contact'));
-      params.delete('new'); params.delete('contact'); setParams(params, { replace: true });
+      // «then» = open the proforma / invoice of the new order right after it is saved.
+      setThenDoc(['proforma', 'invoice'].includes(params.get('then') ?? '') ? params.get('then') : null);
+      params.delete('new'); params.delete('contact'); params.delete('then'); setParams(params, { replace: true });
     }
   }, [params, setParams]);
 
@@ -46,6 +51,7 @@ export default function OrdersPage() {
         title="سفارش‌های فروش"
         subtitle="سفارش‌های دریافتی از مشتری؛ از پیش‌فاکتور تا تحویل و نصب"
         aside={<SelectButton sel={sel} onStart={() => setView('table')} />}
+        actions={isAdmin ? <Button variant="outline" icon={History} onClick={() => setLegacy(true)}>ثبت فروش قبلی</Button> : undefined}
         fab={sel.active ? undefined : { label: 'پیش‌فاکتور جدید', icon: FilePlus2, onClick: () => setCreating(null) }}
       />
       <div className="stat-rail mb-5 grid grid-cols-2 gap-4 md:grid-cols-4">
@@ -91,7 +97,7 @@ export default function OrdersPage() {
                   </span>
                   <OrderStagePill stage={o.stage} status={o.status} />
                 </div>
-                <div className="mt-0.5 truncate text-[11.5px] text-mist"><span className="ltr">{o.number}</span>{o.summary ? ` · ${o.summary}` : ''}</div>
+                <div className="mt-0.5 truncate text-[11.5px] text-mist">{!!o.legacy && <span className="ml-1 font-semibold text-lilac">فروش قبلی ·</span>}<span className="ltr">{o.number}</span>{o.summary ? ` · ${o.summary}` : ''}</div>
                 <div className="mt-2 flex items-center gap-2.5">
                   <span className="num shrink-0 text-[15px] font-extrabold text-ink">{compactMoney(o.total)}</span>
                   <Progress className="flex-1" value={o.status === 'done' ? 100 : o.progress} color={o.late ? '#FF499E' : '#779BE7'} />
@@ -115,7 +121,7 @@ export default function OrdersPage() {
               {orders.map((o) => (
                 <tr key={o.id} className={clsx('cursor-pointer', sel.has(o.id) && 'row-selected')} onClick={() => (sel.active ? sel.toggle(o.id) : navigate(`/sales/orders/${o.id}`))}>
                   <SelectCell sel={sel} id={o.id} />
-                  <td className="ltr whitespace-nowrap text-right font-medium text-ink">{o.number}</td>
+                  <td className="whitespace-nowrap text-right font-medium text-ink"><span className="ltr">{o.number}</span>{!!o.legacy && <div className="text-[11px] font-semibold text-lilac">فروش قبلی{o.legacyDate ? '' : ' · بدون تاریخ'}</div>}</td>
                   <td><div className="text-ink">{o.contactName}</div><div className="text-xs text-mist">{o.fulfillment === 'mto' ? 'تولید سفارشی' : 'از موجودی'}</div></td>
                   <td className="max-w-[240px] truncate text-xs text-frost" title={o.summary}>{o.summary}</td>
                   <td>
@@ -164,8 +170,9 @@ export default function OrdersPage() {
           })}
         </div>
       </>)}
-      <OrderFormModal open={creating !== false} onClose={() => setCreating(false)} defaultContact={creating || null} onSaved={(id) => navigate(`/sales/orders/${id}`)} />
+      <OrderFormModal open={creating !== false} onClose={() => { setCreating(false); setThenDoc(null); }} defaultContact={creating || null} onSaved={(id) => navigate(`/sales/orders/${id}${thenDoc ? `?doc=${thenDoc}` : ''}`)} />
       <SelectionBar sel={sel} path="/orders/bulk-delete" noun="سفارش" />
+      <LegacySaleModal open={legacy} onClose={() => setLegacy(false)} onSaved={(id) => navigate(`/sales/orders/${id}`)} />
     </div>
   );
 }

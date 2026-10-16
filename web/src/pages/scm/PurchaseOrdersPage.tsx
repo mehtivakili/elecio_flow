@@ -19,7 +19,13 @@ export default function PurchaseOrdersPage() {
   const { data: items = [] } = useApi<any[]>('/items');
   const [tab, setTab] = useState<'open' | 'received' | 'all'>('open');
   const [creating, setCreating] = useState<any[] | null>(null);
-  useEffect(() => { if (params.get('new') === '1') { setCreating([]); params.delete('new'); setParams(params, { replace: true }); } }, [params, setParams]);
+  const [forSupplier, setForSupplier] = useState<string | null>(null);
+  useEffect(() => {
+    if (params.get('new') !== '1') return;
+    setForSupplier(params.get('supplier'));
+    setCreating([]);
+    params.delete('new'); params.delete('supplier'); setParams(params, { replace: true });
+  }, [params, setParams]);
 
   const reorder = items.filter((i) => i.needsReorder && i.kind !== 'service');
   const list = data.filter((p) => tab === 'all' || (tab === 'open' ? !['received', 'cancelled'].includes(p.status) : p.status === 'received'));
@@ -108,13 +114,13 @@ export default function PurchaseOrdersPage() {
           </table>
         </Card>
       </>)}
-      <PoFormModal open={creating !== null} onClose={() => setCreating(null)} prefill={creating ?? []} onSaved={(id) => navigate(`/scm/purchase-orders/${id}`)} />
+      <PoFormModal open={creating !== null} onClose={() => { setCreating(null); setForSupplier(null); }} prefill={creating ?? []} defaultSupplier={forSupplier} onSaved={(id) => navigate(`/scm/purchase-orders/${id}`)} />
       <SelectionBar sel={sel} path="/purchase-orders/bulk-delete" noun="سفارش خرید" />
     </div>
   );
 }
 
-function PoFormModal({ open, onClose, prefill, onSaved }: { open: boolean; onClose: () => void; prefill: any[]; onSaved: (id: string) => void }) {
+function PoFormModal({ open, onClose, prefill, onSaved, defaultSupplier }: { open: boolean; onClose: () => void; prefill: any[]; onSaved: (id: string) => void; defaultSupplier?: string | null }) {
   const { data: suppliers = [] } = useApi<any[]>('/suppliers');
   const { data: items = [] } = useApi<any[]>('/items');
   const [supplierId, setSupplierId] = useState<string | null>(null);
@@ -122,13 +128,13 @@ function PoFormModal({ open, onClose, prefill, onSaved }: { open: boolean; onClo
   const [f, setF] = useState<any>({ expectedAt: null, shippingMethod: '', shippingCost: null, notes: '' });
   useEffect(() => {
     if (!open) return;
-    const supplier = prefill.find((i) => i.supplierId)?.supplierId ?? null;
+    const supplier = prefill.find((i) => i.supplierId)?.supplierId ?? defaultSupplier ?? null;
     setSupplierId(supplier);
     setLines(prefill.length
       ? prefill.filter((i) => !supplier || i.supplierId === supplier || !i.supplierId).map((i) => ({ itemId: i.id, qty: Math.max(i.reorderQty || 1, i.reorderPoint - i.available - i.incoming), unitCost: i.cost }))
       : [{ itemId: null, qty: 1, unitCost: null }]);
     setF({ expectedAt: null, shippingMethod: '', shippingCost: null, notes: '' });
-  }, [open, prefill]);
+  }, [open, prefill, defaultSupplier]);
   const supplier = suppliers.find((s) => s.id === supplierId);
   const itemMap = useMemo(() => Object.fromEntries(items.map((i) => [i.id, i])), [items]);
   const valid = lines.filter((l) => l.itemId && l.qty > 0);

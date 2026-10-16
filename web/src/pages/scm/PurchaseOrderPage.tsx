@@ -8,6 +8,7 @@ import { useSession } from '../../lib/session';
 import { Button, Card, Field, Input, KV, Modal, PageHeader, Progress, Spinner, useConfirm } from '../../components/ui';
 import { PoStatusPill, WarehousePicker } from '../../components/domain';
 import { Timeline } from '../../components/flow';
+import { DocumentsCard } from '../../components/documents';
 import { date, dateTime, money, num } from '../../lib/format';
 
 const FLOW = ['draft', 'sent', 'confirmed', 'in_transit', 'partial', 'received'];
@@ -27,7 +28,7 @@ export default function PurchaseOrderPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
+      <PageHeader hero eyebrow="سفارش خرید"
         icon={Truck}
         title={<span className="flex items-center gap-3"><span className="ltr">{p.number}</span><PoStatusPill status={p.status} /></span>}
         subtitle={`${p.supplierName} · ثبت ${date(p.createdAt)}`}
@@ -84,7 +85,7 @@ export default function PurchaseOrderPage() {
         <div className="space-y-6">
           <Card title="جزئیات">
             <KV cols={1} items={[
-              ['تأمین‌کننده', p.supplierName],
+              ['تأمین‌کننده', <Link to={`/scm/suppliers/${p.supplierId}`} className="text-iris hover:underline">{p.supplierName}</Link>],
               ['تاریخ سفارش', date(p.orderedAt)],
               ['تحویل مورد انتظار', <span className={p.delayed ? 'text-rose' : ''}>{date(p.expectedAt)}</span>],
               ['تاریخ دریافت', date(p.receivedAt)],
@@ -94,6 +95,7 @@ export default function PurchaseOrderPage() {
               ['جمع کل', <b>{money(p.total + p.shippingCost, settings.company.currency)}</b>],
             ]} />
           </Card>
+          <DocumentsCard scope={{ poId: p.id }} side="purchase" compact title="فاکتور خرید و رسیدها" />
           <Card title="رسیدها و تاریخچه" icon={History}>
             <Timeline items={[
               ...data.moves.map((m: any) => ({ id: m.id, at: m.at, color: '#0FD69D', title: `رسید ${num(m.qty)} ${m.itemName}`, meta: warehouses.find((w) => w.id === m.toWh)?.name })),

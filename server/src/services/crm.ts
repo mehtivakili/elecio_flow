@@ -116,13 +116,29 @@ export function setStage(contactId: string, stage: string, lostReason?: string) 
   rescore(contactId);
 }
 
-export function buildContactSearch(c: Row, addresses: Row[] = []) {
+export function buildContactSearch(c: Row, addresses: Row[] = [], people: Row[] = []) {
   return normalizeSearch([
     c.name, c.company, c.jobTitle, c.website, c.notes, c.leadSourceDetail, c.customerType,
     ...(c.phones ?? []).map((p: Row) => p.value),
     ...(c.emails ?? []),
     ...addresses.flatMap((a) => [a.title, a.province, a.county, a.address]),
+    ...people.flatMap((p) => [p.name, p.title, p.department, p.email, ...(p.phones ?? []).map((ph: Row) => ph.value)]),
   ].filter(Boolean).join(' '));
+}
+
+/**
+ * After the people of a company change: the primary person is mirrored onto the
+ * contact (company / job title, used by lists and cards) and search is rebuilt.
+ */
+export function syncContactPeople(contactId: string) {
+  const contact = one('SELECT * FROM contacts WHERE id = ?', contactId);
+  if (!contact) return;
+  const people = q('SELECT * FROM contact_people WHERE contact_id = ? ORDER BY is_primary DESC, sort_order, created_at', contactId);
+  const primary = people[0];
+  const addresses = q('SELECT * FROM contact_addresses WHERE contact_id = ?', contactId);
+  const merged = { ...contact, company: primary?.name ?? contact.company, jobTitle: primary?.title ?? contact.jobTitle };
+  run('UPDATE contacts SET company = ?, job_title = ?, search = ? WHERE id = ?',
+    merged.company ?? '', merged.jobTitle ?? '', buildContactSearch(merged, addresses, people), contactId);
 }
 
 /** Contacts with addresses + tag ids attached — the shape the UI works with. */
@@ -132,11 +148,13 @@ export function hydrateContacts(rows: Row[]): Row[] {
   const marks = ids.map(() => '?').join(',');
   const addresses = q(`SELECT * FROM contact_addresses WHERE contact_id IN (${marks}) ORDER BY is_primary DESC, sort_order`, ...ids);
   const tags = q(`SELECT contact_id, tag_id FROM contact_tags WHERE contact_id IN (${marks})`, ...ids);
+  const people = q(`SELECT * FROM contact_people WHERE contact_id IN (${marks}) ORDER BY is_primary DESC, sort_order, created_at`, ...ids);
   return rows.map((r) => ({
     ...r,
     search: undefined,
     addresses: addresses.filter((a) => a.contactId === r.id),
     tags: tags.filter((t) => t.contactId === r.id).map((t) => t.tagId),
+    people: people.filter((p) => p.contactId === r.id),
   }));
 }
 

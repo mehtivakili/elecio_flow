@@ -1,7 +1,7 @@
 import { useNavigate, Link } from 'react-router-dom';
 import {
   Wallet, ShoppingCart, Flame, Factory, Cpu, HandCoins, LayoutDashboard, BellRing, CalendarClock,
-  Activity, Phone, Truck, Wrench, ChevronLeft, Users, Route,
+  Activity, Phone, Truck, Wrench, ChevronLeft, Users, Route, ListChecks,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useApi } from '../lib/hooks';
@@ -91,6 +91,8 @@ export default function DashboardPage() {
         </div>
       </section>
 
+      <MyTasks />
+
       <div className="stat-rail grid grid-cols-2 gap-4 md:grid-cols-4">
         <Stat label="وصولی این ماه" value={compactMoney(k.revenueMonth)} hint={`فروش قطعی ماه: ${compactMoney(k.bookedMonth)} ${cur}`} icon={Wallet} tone="mint" onClick={() => navigate('/finance')} />
         <Stat label="فروش‌های باز" value={num(k.openOrders)} hint={`ارزش: ${compactMoney(k.openOrdersValue)} ${cur}`} icon={ShoppingCart} tone="lilac" alert={k.lateOrders > 0} onClick={() => navigate('/sales/orders')} />
@@ -171,6 +173,41 @@ export default function DashboardPage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+/** Open tasks assigned to me — urgent / overdue first — right on the home page. */
+function MyTasks() {
+  const { me } = useSession();
+  const { data = [] } = useApi<any[]>('/tasks');
+  const mine = data.filter((t) => t.assigneeId === me.id && t.status !== 'done').slice(0, 6);
+  if (!mine.length) return null;
+  const end = new Date(); end.setHours(23, 59, 59, 999);
+  return (
+    <Card title="کارهای من" subtitle="کارهای باز شما — واگذارشده‌ها و فوری‌ها در صدر" icon={ListChecks} pad={false} bodyClass="p-2"
+      actions={<Link to="/tasks" className="flex items-center gap-1 text-xs font-medium text-iris">همه کارها <ChevronLeft size={14} /></Link>}>
+      <ul className="grid gap-1 md:grid-cols-2">
+        {mine.map((t) => {
+          const late = t.dueAt && t.dueAt < Date.now();
+          const today = t.dueAt && !late && t.dueAt <= end.getTime();
+          return (
+            <li key={t.id}>
+              <Link to="/tasks" className="flex items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-ink/[0.05]">
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: t.priority === 'urgent' ? '#FF499E' : t.priority === 'high' ? '#F5B85A' : '#779BE7' }} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium text-ink">{t.title}</span>
+                  <span className="block truncate text-[11.5px] text-mist">
+                    {t.createdBy && t.createdBy !== me.id ? `از ${t.createdByName}` : 'خودم'}
+                    {t.priority === 'urgent' ? ' · فوری' : t.priority === 'high' ? ' · اولویت بالا' : ''}
+                  </span>
+                </span>
+                {t.dueAt && <span className={clsx('shrink-0 text-[11.5px]', late ? 'font-semibold text-rose' : today ? 'text-amber' : 'text-mist')}>{late ? 'عقب‌افتاده' : relative(t.dueAt)}</span>}
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </Card>
   );
 }
 

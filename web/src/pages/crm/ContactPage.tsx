@@ -2,28 +2,36 @@ import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   Building2, PhoneCall, Pencil, FileText, Wrench, Star, MapPin, Mail, Globe, Gauge, Clock, Check, AlarmClock, Trash2,
-  ShoppingCart, Cpu, LifeBuoy, History, UserCheck, Share2,
+  ShoppingCart, Cpu, LifeBuoy, History, UserCheck, Share2, ReceiptText, Paperclip, Plus, ChevronLeft,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { CALL_OUTCOMES, INTERACTION_TYPES } from '@shared/defaults';
 import { del, post, put } from '../../lib/api';
 import { useAction, useApi } from '../../lib/hooks';
 import { useSession } from '../../lib/session';
-import { Button, Card, Empty, KV, PageHeader, Pill, Spinner, Stars, Tabs, useConfirm } from '../../components/ui';
+import { Button, Card, Empty, KV, Modal, PageHeader, Pill, Spinner, Stars, Tabs, useConfirm } from '../../components/ui';
 import { LifecyclePill, OrderStagePill, TicketStatusPill, UnitStatusPill, WarrantyBadge } from '../../components/domain';
 import { ContactFormModal, LogTouchModal, NextActionTag, ScoreBreakdown } from '../../components/crm';
 import { Timeline } from '../../components/flow';
 import { ScoreMeter } from '../../components/charts';
+import { ContactPeople } from '../../components/people';
+import { LegacySaleModal } from '../../components/legacy';
+import { DocumentsCard } from '../../components/documents';
+import { InvoiceDialog, type InvoiceKind } from '../../components/invoice';
 import { compactMoney, date, dateTime, money, num, relative } from '../../lib/format';
 
 export default function ContactPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const confirm = useConfirm();
-  const { settings, tags, userName, lifecycle } = useSession();
+  const { settings, tags, userName, lifecycle, isAdmin } = useSession();
   const { data, isLoading } = useApi<any>(`/contacts/${id}`);
-  const [tab, setTab] = useState<'timeline' | 'orders' | 'units' | 'tickets'>('timeline');
+  const [tab, setTab] = useState<'timeline' | 'orders' | 'docs' | 'units' | 'tickets'>('timeline');
+  const { data: docs = [] } = useApi<any[]>(`/attachments?contactId=${id}`);
+  const [picking, setPicking] = useState<InvoiceKind | null>(null);
+  const [invoice, setInvoice] = useState<{ orderId: string; kind: InvoiceKind } | null>(null);
   const [editing, setEditing] = useState(false);
+  const [legacy, setLegacy] = useState(false);
   const [touch, setTouch] = useState<{ followupId?: string } | null>(null);
 
   const setStage = useAction((body: any) => post(`/contacts/${id}/stage`, body), { success: 'مرحله مخاطب تغییر کرد' });
@@ -74,7 +82,7 @@ export default function ContactPage() {
 
   return (
     <div>
-      <PageHeader
+      <PageHeader hero eyebrow="پرونده مشتری"
         icon={Building2}
         title={<span className="flex items-center gap-2">
           {c.name}
@@ -88,7 +96,9 @@ export default function ContactPage() {
         actions={<>
           <Button variant="ghost" icon={Pencil} onClick={() => setEditing(true)}>ویرایش</Button>
           <Button variant="outline" icon={Wrench} onClick={() => navigate(`/service/tickets?new=1&contact=${c.id}`)}>تیکت</Button>
-          <Button variant="outline" icon={FileText} onClick={() => navigate(`/sales/orders?new=1&contact=${c.id}`)}>پیش‌فاکتور</Button>
+          <Button variant="outline" icon={FileText} onClick={() => setPicking('proforma')}>پیش‌فاکتور</Button>
+          <Button variant="outline" icon={ReceiptText} onClick={() => setPicking('invoice')}>فاکتور فروش</Button>
+          {isAdmin && <Button variant="outline" icon={History} onClick={() => setLegacy(true)}>ثبت فروش قبلی</Button>}
           <Button variant="glow" icon={PhoneCall} onClick={() => setTouch({})}>ثبت ارتباط</Button>
         </>}
       />
@@ -127,6 +137,8 @@ export default function ContactPage() {
               <div className="mt-4 flex items-center justify-between text-xs text-mist">امتیاز کیفی<Stars value={c.rating} onChange={(v) => rate.mutate(v)} /></div>
             </Card>
           )}
+
+          <ContactPeople contact={c} />
 
           <Card title="پرونده" icon={Building2}>
             <KV cols={1} items={[
@@ -167,7 +179,7 @@ export default function ContactPage() {
           </Card>
 
           <Button variant="danger" size="sm" icon={Trash2} onClick={async () => {
-            if (await confirm({ title: 'حذف مخاطب', danger: true, confirm: 'حذف', body: 'تمام تماس‌ها و پیگیری‌های این مخاطب حذف می‌شود. مخاطبی که سفارش دارد قابل حذف نیست.' })) remove.mutate(undefined);
+            if (await confirm({ title: 'حذف مخاطب', danger: true, confirm: 'حذف', body: 'مخاطب از فهرست‌ها حذف می‌شود. اگر سفارش، دستگاه یا تیکت دارد، آن سوابق دست‌نخورده می‌مانند و مخاطب به بایگانی می‌رود (از تنظیمات قابل بازگرداندن است).' })) remove.mutate(undefined);
           }}>حذف مخاطب</Button>
         </div>
 
@@ -201,6 +213,7 @@ export default function ContactPage() {
             tabs={[
               { key: 'timeline', label: 'تاریخچه ارتباط', icon: History, count: timeline.length },
               { key: 'orders', label: 'فروش‌ها', icon: ShoppingCart, count: data.orders.length },
+              { key: 'docs', label: 'فاکتورها و اسناد', icon: Paperclip, count: docs.length },
               { key: 'units', label: 'دستگاه‌ها', icon: Cpu, count: data.units.length },
               { key: 'tickets', label: 'تیکت‌ها', icon: LifeBuoy, count: data.tickets.length },
             ]}
@@ -212,7 +225,7 @@ export default function ContactPage() {
             <Card pad={false} bodyClass="overflow-x-auto">
               {data.orders.length === 0 ? <Empty icon={ShoppingCart} title="سفارشی ثبت نشده" action={<Button variant="action" onClick={() => navigate(`/sales/orders?new=1&contact=${c.id}`)}>ایجاد پیش‌فاکتور</Button>} /> : (
                 <table className="tbl">
-                  <thead><tr><th>شماره</th><th>مرحله</th><th>مبلغ</th><th>پرداخت‌شده</th><th>تاریخ</th></tr></thead>
+                  <thead><tr><th>شماره</th><th>مرحله</th><th>مبلغ</th><th>پرداخت‌شده</th><th>تاریخ</th><th>اسناد</th></tr></thead>
                   <tbody>{data.orders.map((o: any) => (
                     <tr key={o.id} className="cursor-pointer" onClick={() => navigate(`/sales/orders/${o.id}`)}>
                       <td className="ltr text-right font-medium">{o.number}</td>
@@ -220,11 +233,22 @@ export default function ContactPage() {
                       <td className="num">{money(o.total)}</td>
                       <td className="num text-mist">{money(o.paid)}</td>
                       <td className="text-xs text-mist">{date(o.createdAt)}</td>
+                      <td onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center gap-1">
+                          <Button size="sm" variant="ghost" icon={FileText} title="پیش‌فاکتور PDF" onClick={() => setInvoice({ orderId: o.id, kind: 'proforma' })} />
+                          {o.status !== 'cancelled' && <Button size="sm" variant="ghost" icon={ReceiptText} title="فاکتور فروش PDF" onClick={() => setInvoice({ orderId: o.id, kind: 'invoice' })}>{o.invoiceNumber && <span className="ltr text-[11px]">{o.invoiceNumber}</span>}</Button>}
+                        </div>
+                      </td>
                     </tr>
                   ))}</tbody>
                 </table>
               )}
             </Card>
+          )}
+
+          {tab === 'docs' && (
+            <DocumentsCard scope={{ contactId: c.id }} side="sales"
+              links={data.orders.map((o: any) => ({ id: o.id, label: `${o.number} — ${money(o.total, cur)}${o.legacy ? ' (فروش قبلی)' : ''}` }))} />
           )}
 
           {tab === 'units' && (
@@ -233,8 +257,8 @@ export default function ContactPage() {
                 <table className="tbl">
                   <thead><tr><th>سریال</th><th>محصول</th><th>وضعیت</th><th>فریمور</th><th>گارانتی</th></tr></thead>
                   <tbody>{data.units.map((u: any) => (
-                    <tr key={u.id} className="cursor-pointer" onClick={() => navigate(`/units/${u.serial}`)}>
-                      <td className="ltr text-right font-mono text-xs text-ink">{u.serial}</td>
+                    <tr key={u.id} className="cursor-pointer" onClick={() => navigate(`/units/${u.id}`)}>
+                      <td className="ltr text-right font-mono text-xs text-ink">{u.serialUnknown ? <span className="font-sans text-amber">بدون سریال</span> : u.serial}</td>
                       <td>{u.itemName}</td>
                       <td><UnitStatusPill status={u.status} /></td>
                       <td className="ltr text-right text-xs">{u.fwVersion || '—'}</td>
@@ -264,7 +288,50 @@ export default function ContactPage() {
       </div>
 
       <ContactFormModal open={editing} onClose={() => setEditing(false)} contact={c} />
+      <LegacySaleModal open={legacy} onClose={() => setLegacy(false)} contactId={c.id} onSaved={(oid) => navigate(`/sales/orders/${oid}`)} />
+      <OrderDocPicker kind={picking} orders={data.orders} currency={cur} onClose={() => setPicking(null)}
+        onPick={(orderId) => { const kind = picking!; setPicking(null); setInvoice({ orderId, kind }); }}
+        onNew={() => navigate(`/sales/orders?new=1&contact=${c.id}&then=${picking}`)} />
+      {invoice && <InvoiceDialog orderId={invoice.orderId} kind={invoice.kind} open onClose={() => setInvoice(null)} />}
       <LogTouchModal open={!!touch} onClose={() => setTouch(null)} contact={c} completeFollowupId={touch?.followupId} />
     </div>
+  );
+}
+
+/** Choose which order a proforma / sales invoice is for, or start a new one. */
+function OrderDocPicker({ kind, orders, currency, onClose, onPick, onNew }: {
+  kind: InvoiceKind | null; orders: any[]; currency: string; onClose: () => void; onPick: (orderId: string) => void; onNew: () => void;
+}) {
+  const list = orders.filter((o) => o.status !== 'cancelled' && (kind === 'proforma' || o.stage !== 'quote' || o.legacy || o.invoiceNumber))
+    .concat(kind === 'invoice' ? orders.filter((o) => o.status !== 'cancelled' && o.stage === 'quote' && !o.legacy && !o.invoiceNumber) : []);
+  const title = kind === 'proforma' ? 'پیش‌فاکتور' : 'فاکتور فروش';
+  return (
+    <Modal open={!!kind} onClose={onClose} icon={kind === 'proforma' ? FileText : ReceiptText} size="sm"
+      title={`${title} — انتخاب سفارش`}
+      subtitle={kind === 'proforma' ? 'پیش‌فاکتور برای پیشنهاد قیمت قبل از خرید' : 'فاکتور فروش برای خریدی که انجام شده یا قطعی است'}
+      footer={<Button variant="primary" icon={Plus} onClick={onNew}>{kind === 'proforma' ? 'پیش‌فاکتور جدید' : 'ثبت فروش جدید و صدور فاکتور'}</Button>}>
+      {list.length === 0 ? <p className="py-4 text-center text-sm text-mist">برای این مشتری سفارشی ثبت نشده — از دکمه پایین شروع کنید.</p> : (
+        <ul className="space-y-1.5">
+          {list.map((o) => (
+            <li key={o.id}>
+              <button type="button" onClick={() => onPick(o.id)}
+                className="flex w-full items-center gap-3 rounded-xl border border-line/60 bg-deep/40 px-3 py-2.5 text-right transition hover:border-iris/60">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="ltr font-semibold text-ink">{o.number}</span>
+                    <OrderStagePill stage={o.stage} status={o.status} />
+                  </div>
+                  <div className="mt-0.5 text-[11.5px] text-mist">
+                    {money(o.total, currency)} · {date(o.legacyDate ?? o.createdAt)}
+                    {o.invoiceNumber && <> · فاکتور <span className="ltr">{o.invoiceNumber}</span></>}
+                  </div>
+                </div>
+                <ChevronLeft size={16} className="shrink-0 text-mist" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Modal>
   );
 }

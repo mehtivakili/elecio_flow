@@ -2,7 +2,7 @@ import { one, q, run, tx, uid, val, type Row } from '../db.ts';
 import {
   DAY, HttpError, getSettings, logActivity, nextNumber, nextSerial, orderStagesFor, type AuthUser,
 } from '../core.ts';
-import type { GateKind, StageDef } from '../../../shared/defaults.ts';
+import { isAdminRole, type GateKind, type StageDef } from '../../../shared/defaults.ts';
 import { defaultWarehouse, moveStock, reserve, unitEvent, available } from './inventory.ts';
 import { setStage } from './crm.ts';
 
@@ -50,7 +50,7 @@ export function recalcOrder(orderId: string) {
 /** Per line: how much is covered by reserved serials or reserved bulk stock. */
 export function lineAllocation(orderId: string) {
   const lines = q(
-    `SELECT l.*, i.name AS item_name, i.sku, i.kind AS item_kind, i.serialized
+    `SELECT l.*, i.name AS item_name, i.sku, i.kind AS item_kind, i.serialized, i.unit AS item_unit
      FROM order_lines l JOIN items i ON i.id = l.item_id WHERE l.order_id = ? ORDER BY l.sort_order`, orderId,
   );
   return lines.map((l) => {
@@ -120,9 +120,9 @@ export function advanceOrder(actor: Actor, orderId: string, opts: { to?: string;
         .map((s) => ({ stage: s.label, reason: checkGate(s.gate, order) }))
         .filter((b) => b.reason);
       if (blockers.length && !opts.force) {
-        throw new HttpError(409, blockers[0].reason!, { blockers, canForce: ['owner', 'admin'].includes(actor.role) });
+        throw new HttpError(409, blockers[0].reason!, { blockers, canForce: isAdminRole(actor.roles ?? actor.role) });
       }
-      if (blockers.length && !['owner', 'admin'].includes(actor.role)) {
+      if (blockers.length && !isAdminRole(actor.roles ?? actor.role)) {
         throw new HttpError(403, 'عبور اجباری از کنترل‌ها فقط برای مدیر مجاز است');
       }
     }
@@ -195,7 +195,7 @@ export function allocateOrder(
       const ids = input.unitIds?.length
         ? input.unitIds
         : q(
-          "SELECT id FROM units WHERE org_id = ? AND item_id = ? AND status = 'in_stock' ORDER BY built_at LIMIT ?",
+          "SELECT id FROM units WHERE org_id = ? AND item_id = ? AND status = 'in_stock' AND deleted_at IS NULL ORDER BY built_at LIMIT ?",
           actor.orgId, line.itemId, line.missing,
         ).map((u) => u.id);
       if (!ids.length) throw new HttpError(409, `واحد آماده‌ای از ${line.itemName} در انبار نیست — دستور تولید ایجاد کنید`);
@@ -318,6 +318,7 @@ export function createWorkOrder(
     input.dueAt ?? null, input.notes ?? '', now, now,
   );
   enterStage(actor, 'work_order', id, stages[0].key);
+  if (input.assigneeId) writeCrew(actor, id, stages[0].key, 'assigned', orgUserIds(actor.orgId, [input.assigneeId]));
   logActivity(actor, 'work_order', id, 'create', `دستور تولید ${input.qty} عدد ${item.name}`);
   return id;
 }
@@ -356,6 +357,31 @@ const UNIT_STEP_LABELS: Record<string, string> = {
   packaging: 'بسته‌بندی',
 };
 
+/**
+ * Per-device checkpoints in the organisation's own stage order ("testing" = the QC result).
+ * Stages can be reordered in settings (e.g. assembly before firmware), so prerequisites are
+ * taken from that order instead of being fixed.
+ */
+function deviceStepOrder(orgId: string): string[] {
+  return getSettings(orgId).workOrderStages.map((s) => s.key).filter((k) => k in UNIT_STEP_LABELS || k === 'testing');
+}
+const stepLabel = (orgId: string, step: string) =>
+  getSettings(orgId).workOrderStages.find((s) => s.key === step)?.label ?? UNIT_STEP_LABELS[step] ?? step;
+function unitHasStep(unit: Row, step: string) {
+  return step === 'testing' ? unit.qcResult === 'pass' : !!one('SELECT id FROM unit_process_steps WHERE unit_id = ? AND step = ?', unit.id, step);
+}
+/** First earlier checkpoint this device has not passed, as an error message. */
+function missingPrerequisite(orgId: string, unit: Row, step: string): string | null {
+  const order = deviceStepOrder(orgId);
+  for (const before of order.slice(0, Math.max(0, order.indexOf(step)))) {
+    if (unitHasStep(unit, before)) continue;
+    return before === 'testing'
+      ? `QC دستگاه ${unit.serial} هنوز تأیید نشده است`
+      : `ابتدا «${stepLabel(orgId, before)}» دستگاه ${unit.serial} را تکمیل کنید`;
+  }
+  return null;
+}
+
 /** Every physical unit must finish the current production checkpoint. */
 function unitStepGate(stage: string, wo: Row): string | null {
   if (stage === 'testing') return null; // QC is enforced by the qc_pass gate above.
@@ -366,7 +392,7 @@ function unitStepGate(stage: string, wo: Row): string | null {
        AND NOT EXISTS (SELECT 1 FROM unit_process_steps s WHERE s.unit_id = u.id AND s.step = ?)`,
     wo.id, stage,
   );
-  return pending ? `${pending} دستگاه هنوز مرحله «${UNIT_STEP_LABELS[stage]}» را تکمیل نکرده‌اند` : null;
+  return pending ? `${pending} دستگاه هنوز مرحله «${stepLabel(wo.orgId, stage)}» را تکمیل نکرده‌اند` : null;
 }
 
 /** Leaving the kitting stage consumes the BOM and gives every device its serial number. */
@@ -417,7 +443,70 @@ function finishWorkOrder(actor: Actor, wo: Row) {
   run("UPDATE work_orders SET status = 'done', completed_at = ? WHERE id = ?", now, wo.id);
 }
 
-export function advanceWorkOrder(actor: Actor, woId: string, opts: { to?: string; force?: boolean; note?: string }) {
+/* ═════════════════════════ Production crew ═════════════════════════
+ * Each work-order stage can have several people: who is responsible for it ("assigned")
+ * and who actually did it ("performed"). The trail stays with the work order.
+ */
+
+function orgUserIds(orgId: string, ids: unknown): string[] {
+  const wanted = [...new Set((Array.isArray(ids) ? ids : []).map(String))];
+  if (!wanted.length) return [];
+  const valid = new Set(q(`SELECT id FROM users WHERE org_id = ? AND id IN (${wanted.map(() => '?').join(',')})`, orgId, ...wanted).map((u) => u.id));
+  if (valid.size !== wanted.length) throw new HttpError(400, 'یک یا چند نفر از کاربران این سازمان نیستند');
+  return wanted;
+}
+
+function writeCrew(actor: Actor, woId: string, stage: string, role: 'assigned' | 'performed', userIds: string[]) {
+  const before = q('SELECT user_id FROM work_order_crew WHERE work_order_id = ? AND stage = ? AND role = ?', woId, stage, role).map((r) => r.userId);
+  for (const id of before.filter((u) => !userIds.includes(u))) {
+    run('DELETE FROM work_order_crew WHERE work_order_id = ? AND stage = ? AND role = ? AND user_id = ?', woId, stage, role, id);
+  }
+  const now = Date.now();
+  for (const id of userIds.filter((u) => !before.includes(u))) {
+    run(
+      `INSERT INTO work_order_crew (id, org_id, work_order_id, stage, user_id, role, added_by, added_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      uid('woc'), actor.orgId, woId, stage, id, role, actor.id, now,
+    );
+  }
+  return before.length !== userIds.length || userIds.some((u) => !before.includes(u));
+}
+
+const userNames = (ids: string[]) => ids.map((id) => one('SELECT full_name FROM users WHERE id = ?', id)?.fullName).filter(Boolean).join('، ');
+
+export function setStageCrew(actor: Actor, woId: string, input: { stage?: string; assigned?: string[]; performed?: string[] }) {
+  return tx(() => {
+    const wo = one('SELECT * FROM work_orders WHERE id = ? AND org_id = ?', woId, actor.orgId);
+    if (!wo) throw new HttpError(404, 'دستور تولید پیدا نشد');
+    const stage = getSettings(actor.orgId).workOrderStages.find((s) => s.key === input.stage);
+    if (!stage) throw new HttpError(400, 'مرحله نامعتبر است');
+    const parts: string[] = [];
+    if (input.assigned) {
+      const ids = orgUserIds(actor.orgId, input.assigned);
+      if (writeCrew(actor, wo.id, stage.key, 'assigned', ids)) parts.push(`مسئولان: ${userNames(ids) || '—'}`);
+      // The work order's headline assignee follows whoever leads its current stage.
+      if (stage.key === wo.stage && ids.length && !ids.includes(wo.assigneeId)) run('UPDATE work_orders SET assignee_id = ? WHERE id = ?', ids[0], wo.id);
+    }
+    if (input.performed) {
+      const ids = orgUserIds(actor.orgId, input.performed);
+      if (writeCrew(actor, wo.id, stage.key, 'performed', ids)) parts.push(`انجام‌دهندگان: ${userNames(ids) || '—'}`);
+    }
+    if (parts.length) logActivity(actor, 'work_order', wo.id, 'crew', `${wo.number} · ${stage.label} — ${parts.join(' · ')}`);
+    return q('SELECT * FROM work_order_crew WHERE work_order_id = ? ORDER BY added_at', wo.id);
+  });
+}
+
+/** When a stage is left without anyone recorded as having done it, its assigned people (or the actor) are recorded. */
+function closeStageCrew(actor: Actor, woId: string, stage: string, performers?: string[]) {
+  if (performers?.length) {
+    writeCrew(actor, woId, stage, 'performed', orgUserIds(actor.orgId, performers));
+    return;
+  }
+  if (one("SELECT id FROM work_order_crew WHERE work_order_id = ? AND stage = ? AND role = 'performed'", woId, stage)) return;
+  const assigned = q("SELECT user_id FROM work_order_crew WHERE work_order_id = ? AND stage = ? AND role = 'assigned'", woId, stage).map((r) => r.userId);
+  writeCrew(actor, woId, stage, 'performed', assigned.length ? assigned : [actor.id]);
+}
+
+export function advanceWorkOrder(actor: Actor, woId: string, opts: { to?: string; force?: boolean; note?: string; performers?: string[] }) {
   return tx(() => {
     const wo = one('SELECT * FROM work_orders WHERE id = ? AND org_id = ?', woId, actor.orgId);
     if (!wo) throw new HttpError(404, 'دستور تولید پیدا نشد');
@@ -437,7 +526,7 @@ export function advanceWorkOrder(actor: Actor, woId: string, opts: { to?: string
         if (reason && (hardGate || !opts.force)) {
           throw new HttpError(409, reason, {
             blockers: [{ stage: stage.label, reason }],
-            canForce: !hardGate && ['owner', 'admin'].includes(actor.role),
+            canForce: !hardGate && isAdminRole(actor.roles ?? actor.role),
           });
         }
         if (stage.gate === 'kitting') kit(actor, wo);
@@ -446,7 +535,11 @@ export function advanceWorkOrder(actor: Actor, woId: string, opts: { to?: string
 
     const target = stages[to];
     const now = Date.now();
+    if (to > from) closeStageCrew(actor, woId, wo.stage, opts.performers);
     run('UPDATE work_orders SET stage = ?, stage_entered_at = ?, updated_at = ? WHERE id = ?', target.key, now, now, woId);
+    // People already assigned to the next stage lead it; the headline assignee follows them.
+    const nextLead = one("SELECT user_id FROM work_order_crew WHERE work_order_id = ? AND stage = ? AND role = 'assigned' ORDER BY added_at LIMIT 1", woId, target.key);
+    if (nextLead) run('UPDATE work_orders SET assignee_id = ? WHERE id = ?', nextLead.userId, woId);
     enterStage(actor, 'work_order', woId, target.key, opts.note ?? '', !!opts.force);
     if (target.key === 'firmware' && wo.fwVersion) {
       for (const unit of q("SELECT id FROM units WHERE work_order_id = ? AND status = 'in_production'", woId)) {
@@ -463,7 +556,7 @@ export function advanceWorkOrder(actor: Actor, woId: string, opts: { to?: string
 export function setUnitProcessStep(
   actor: Actor,
   woId: string,
-  input: { unitIds?: string[]; step?: string; completed?: boolean; note?: string },
+  input: { unitIds?: string[]; step?: string; completed?: boolean; note?: string; performers?: string[] },
 ) {
   return tx(() => {
     const wo = one('SELECT * FROM work_orders WHERE id = ? AND org_id = ?', woId, actor.orgId);
@@ -471,7 +564,7 @@ export function setUnitProcessStep(
     if (wo.status !== 'open') throw new HttpError(409, 'دستور تولید بسته است');
     const step = String(input.step ?? '');
     if (!(step in UNIT_STEP_LABELS)) throw new HttpError(400, 'مرحله دستگاه نامعتبر است');
-    if (wo.stage !== step) throw new HttpError(409, `اکنون فقط مرحله «${UNIT_STEP_LABELS[wo.stage] ?? wo.stage}» قابل ثبت است`);
+    if (wo.stage !== step) throw new HttpError(409, `اکنون فقط مرحله «${stepLabel(actor.orgId, wo.stage)}» قابل ثبت است`);
 
     const ids = [...new Set(input.unitIds ?? [])];
     if (!ids.length) throw new HttpError(400, 'حداقل یک دستگاه را انتخاب کنید');
@@ -483,33 +576,33 @@ export function setUnitProcessStep(
 
     const complete = input.completed !== false;
     const now = Date.now();
+    const performers = input.performers?.length ? orgUserIds(actor.orgId, input.performers) : [actor.id];
+    const performerNames = userNames(performers);
     for (const unit of units) {
       if (complete) {
-        if (step === 'assembly' && !one("SELECT id FROM unit_process_steps WHERE unit_id = ? AND step = 'firmware'", unit.id)) {
-          throw new HttpError(409, `ابتدا آماده‌سازی نرم‌افزار دستگاه ${unit.serial} را تکمیل کنید`);
-        }
-        if (step === 'packaging') {
-          if (!one("SELECT id FROM unit_process_steps WHERE unit_id = ? AND step = 'assembly'", unit.id)) {
-            throw new HttpError(409, `ابتدا مونتاژ دستگاه ${unit.serial} را تکمیل کنید`);
-          }
-          if (unit.qcResult !== 'pass') throw new HttpError(409, `QC دستگاه ${unit.serial} هنوز تأیید نشده است`);
-        }
+        const missing = missingPrerequisite(actor.orgId, unit, step);
+        if (missing) throw new HttpError(409, missing);
         run(
-          `INSERT INTO unit_process_steps (id, org_id, unit_id, work_order_id, step, completed_at, completed_by, note)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT(unit_id, step) DO UPDATE SET completed_at = excluded.completed_at, completed_by = excluded.completed_by, note = excluded.note`,
-          uid('ups'), actor.orgId, unit.id, wo.id, step, now, actor.id, input.note ?? '',
+          `INSERT INTO unit_process_steps (id, org_id, unit_id, work_order_id, step, completed_at, completed_by, note, performers_json)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(unit_id, step) DO UPDATE SET completed_at = excluded.completed_at, completed_by = excluded.completed_by,
+             note = excluded.note, performers_json = excluded.performers_json`,
+          uid('ups'), actor.orgId, unit.id, wo.id, step, now, actor.id, input.note ?? '', JSON.stringify(performers),
         );
         if (step === 'firmware' && wo.fwVersion) run('UPDATE units SET fw_version = ? WHERE id = ?', wo.fwVersion, unit.id);
-        unitEvent(actor, unit.id, step, `${UNIT_STEP_LABELS[step]} تکمیل شد`, 'work_order', wo.id);
+        unitEvent(actor, unit.id, step, `${stepLabel(actor.orgId, step)} تکمیل شد${performerNames ? ` — ${performerNames}` : ''}`, 'work_order', wo.id);
       } else {
-        const hasLater = step === 'firmware'
-          ? one("SELECT id FROM unit_process_steps WHERE unit_id = ? AND step IN ('assembly','packaging')", unit.id) || unit.qcResult
-          : step === 'assembly' ? one("SELECT id FROM unit_process_steps WHERE unit_id = ? AND step = 'packaging'", unit.id) || unit.qcResult : null;
+        const order = deviceStepOrder(actor.orgId);
+        const hasLater = order.slice(order.indexOf(step) + 1).some((later) => (later === 'testing' ? !!unit.qcResult : unitHasStep(unit, later)));
         if (hasLater) throw new HttpError(409, `برای دستگاه ${unit.serial} مرحله بعدی ثبت شده و این مرحله قابل بازگشایی نیست`);
         run('DELETE FROM unit_process_steps WHERE unit_id = ? AND step = ?', unit.id, step);
-        unitEvent(actor, unit.id, 'step_reopened', `مرحله ${UNIT_STEP_LABELS[step]} بازگشایی شد`, 'work_order', wo.id);
+        unitEvent(actor, unit.id, 'step_reopened', `مرحله ${stepLabel(actor.orgId, step)} بازگشایی شد`, 'work_order', wo.id);
       }
+    }
+    // Everyone who did a device step is on the stage's "performed" list.
+    if (complete) {
+      const current = q("SELECT user_id FROM work_order_crew WHERE work_order_id = ? AND stage = ? AND role = 'performed'", wo.id, step).map((r) => r.userId);
+      writeCrew(actor, wo.id, step, 'performed', [...new Set([...current, ...performers])]);
     }
     return { updated: units.length };
   });
@@ -523,8 +616,9 @@ export function recordQc(
     if (!unit) throw new HttpError(404, 'دستگاه در این دستور تولید نیست');
     const wo = one('SELECT * FROM work_orders WHERE id = ? AND org_id = ?', woId, actor.orgId);
     if (!wo || wo.stage !== 'testing') throw new HttpError(409, 'ثبت QC فقط در مرحله تست و کنترل کیفیت مجاز است');
-    if (!one("SELECT id FROM unit_process_steps WHERE unit_id = ? AND step = 'assembly'", unit.id)) {
-      throw new HttpError(409, 'ابتدا مونتاژ این دستگاه را تکمیل کنید');
+    const missing = missingPrerequisite(actor.orgId, unit, 'testing');
+    if (missing) {
+      throw new HttpError(409, missing);
     }
     const passed = input.results.length > 0 && input.results.every((r) => r.ok);
     run(

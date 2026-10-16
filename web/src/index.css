@@ -442,3 +442,21 @@ input[type='checkbox'] { accent-color: #779BE7; width: 16px; height: 16px; curso
 @media (min-width: 768px) {
   .selection-bar { left: 0; right: 0; margin-inline: auto; bottom: 24px; width: min(520px, calc(100% - 48px)); animation: fade-up 0.25s ease-out; }
 }
+
+/* Leaflet is laid out left-to-right internally; only its text is right-to-left.
+   (In an RTL page the tooltip/popup arrows were shifted sideways.) */
+.leaflet-container { direction: ltr; }
+.leaflet-tooltip, .leaflet-popup-content { direction: rtl; text-align: right; font-family: inherit; }
+.leaflet-tooltip { background: #2b3a40; color: #E0FBFC; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 10px; padding: 4px 10px; font-size: 12px; box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45); }
+.leaflet-tooltip-top::before { border-top-color: #2b3a40; }
+
+/* Customers known only by province/city: same stage slices, but hollow with a dashed ring and a "?" */
+.map-pin-approx { position: relative; border: 1.5px dashed #E0FBFC; box-shadow: 0 0 0 2px rgba(37, 50, 55, 0.9), 0 3px 10px rgba(0, 0, 0, 0.45); }
+.map-pin-hole {
+  position: absolute; inset: 22%; display: flex; align-items: center; justify-content: center;
+  border-radius: 9999px; background: #253237; color: #E0FBFC; font-size: 10px; font-weight: 800; line-height: 1;
+}
+.map-pin-q {
+  position: absolute; top: -5px; left: -5px; display: flex; height: 13px; width: 13px; align-items: center; justify-content: center;
+  border-radius: 9999px; background: #F5B85A; color: #10181b; font-size: 9px; font-weight: 900; line-height: 1; border: 1.5px solid #253237;
+}

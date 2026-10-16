@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
-import { Plus, Trash2, MapPin, Phone, Users as UsersIcon, Target, PhoneCall, CalendarPlus, Sparkles, AlertTriangle } from 'lucide-react';
+import { Plus, Trash2, MapPin, Phone, Users as UsersIcon, Target, PhoneCall, CalendarPlus, Sparkles, AlertTriangle, Search, LocateFixed } from 'lucide-react';
 import clsx from 'clsx';
 import { IRAN_CENTER, IRAN_PROVINCES, getProvince } from '@shared/iran-locations';
 import { CALL_OUTCOMES, INTERACTION_TYPES } from '@shared/defaults';
@@ -15,14 +15,25 @@ import { num } from '../lib/format';
 
 /* ───────────────────────── Map location picker ───────────────────────── */
 
-export function LocationPicker({ lat, lng, province, onChange, height = 220 }: {
+/**
+ * Pick an exact location: search an address or place name (OpenStreetMap
+ * Nominatim — the query text is sent to openstreetmap.org), use the phone's GPS,
+ * or tap the map.
+ */
+export function LocationPicker({ lat, lng, province, onChange, height = 220, searchHint }: {
   lat?: number | null; lng?: number | null; province?: string; onChange: (lat: number, lng: number) => void; height?: number;
+  /** Appended to searches to narrow them, e.g. "کرج، البرز". */
+  searchHint?: string;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const marker = useRef<L.CircleMarker | null>(null);
+  const placeRef = useRef<(p: L.LatLngExpression) => void>(() => {});
   const cb = useRef(onChange);
   cb.current = onChange;
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<any[] | null>(null);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!box.current || map.current) return;
@@ -33,6 +44,7 @@ export function LocationPicker({ lat, lng, province, onChange, height = 220 }: {
       if (marker.current) marker.current.setLatLng(p);
       else marker.current = L.circleMarker(p, { radius: 9, color: '#253237', weight: 3, fillColor: '#FF499E', fillOpacity: 1 }).addTo(m);
     };
+    placeRef.current = place;
     if (lat != null && lng != null) place([lat, lng]);
     m.on('click', (e: L.LeafletMouseEvent) => { place(e.latlng); cb.current(+e.latlng.lat.toFixed(6), +e.latlng.lng.toFixed(6)); });
     map.current = m;
@@ -46,11 +58,79 @@ export function LocationPicker({ lat, lng, province, onChange, height = 220 }: {
     if (p && map.current && lat == null) map.current.flyTo([p.lat, p.lng], 9, { duration: 0.6 });
   }, [province, lat]);
 
+  const choose = (la: number, ln: number, zoom = 16) => {
+    placeRef.current([la, ln]);
+    map.current?.flyTo([la, ln], zoom, { duration: 0.7 });
+    cb.current(+la.toFixed(6), +ln.toFixed(6));
+    setResults(null);
+  };
+
+  const search = async () => {
+    const text = query.trim();
+    if (text.length < 2) return;
+    setBusy(true);
+    const ask = async (q: string) => {
+      const url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&countrycodes=ir&accept-language=fa&q=' + encodeURIComponent(q);
+      const res = await fetch(url, { headers: { Accept: 'application/json' } });
+      return res.ok ? (await res.json()) as any[] : [];
+    };
+    try {
+      const hint = searchHint || province || '';
+      let found = hint && !text.includes(hint) ? await ask(text + '، ' + hint) : [];
+      if (!found.length) found = await ask(text);
+      setResults(found);
+    } catch {
+      setResults([]);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const locateMe = () => {
+    if (!navigator.geolocation) return;
+    setBusy(true);
+    navigator.geolocation.getCurrentPosition(
+      (p) => { setBusy(false); choose(p.coords.latitude, p.coords.longitude, 17); },
+      () => setBusy(false),
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  };
+
   return (
     <div>
+      <div className="mb-2 flex gap-1.5">
+        <div className="relative min-w-0 flex-1">
+          <Search size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-mist" />
+          <Input
+            className="pr-9"
+            value={query}
+            enterKeyHint="search"
+            placeholder="جستجوی آدرس، خیابان، شهرک صنعتی یا نام مکان…"
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); search(); } }}
+          />
+        </div>
+        <Button variant="action" icon={Search} loading={busy} onClick={search} aria-label="جستجوی آدرس"><span className="hidden sm:inline">جستجو</span></Button>
+        <Button variant="outline" icon={LocateFixed} onClick={locateMe} aria-label="موقعیت فعلی من" title="موقعیت فعلی من" />
+      </div>
+      {results && (
+        <div className="mb-2 overflow-hidden rounded-xl border border-line bg-deep/80">
+          {results.length === 0 ? <p className="px-3 py-3 text-xs text-mist">نتیجه‌ای پیدا نشد — عبارت کوتاه‌تر یا نام شهر را امتحان کنید، یا روی نقشه کلیک کنید.</p> : (
+            <ul className="max-h-48 overflow-y-auto">
+              {results.map((r) => (
+                <li key={r.place_id}>
+                  <button type="button" onClick={() => choose(+r.lat, +r.lon)} className="flex w-full items-start gap-2 px-3 py-2.5 text-right text-sm text-frost hover:bg-iris/15">
+                    <MapPin size={14} className="mt-1 shrink-0 text-iris" /><span className="leading-6">{r.display_name}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       <div ref={box} className="overflow-hidden rounded-xl border border-line" style={{ height }} />
       <p className="mt-1.5 text-[11px] text-mist">
-        برای ثبت موقعیت دقیق روی نقشه کلیک کنید
+        آدرس را جستجو کنید یا مستقیم روی نقشه کلیک کنید
         {lat != null && lng != null && <span className="ltr mr-2 inline-block">({lat}, {lng})</span>}
       </p>
     </div>
@@ -122,8 +202,8 @@ export function ContactFormModal({ open, onClose, contact, onSaved }: { open: bo
       onClose={onClose}
       size="lg"
       icon={UsersIcon}
-      title={contact ? `ویرایش ${contact.name}` : 'ثبت سرنخ / مخاطب جدید'}
-      subtitle="اطلاعات کامل‌تر = امتیاز دقیق‌تر سرنخ"
+      title={contact ? `ویرایش ${contact.name}` : 'مشتری / مخاطب جدید'}
+      subtitle="مرحله (سرنخ سرد، گرم، مشتری…) یکی از ویژگی‌های مشتری است و در همین فرم تعیین می‌شود"
       footer={<>
         {dupes && (
           <div className="ml-auto flex items-center gap-2 text-xs text-amber">
@@ -164,7 +244,7 @@ export function ContactFormModal({ open, onClose, contact, onSaved }: { open: bo
           <Field label={form.kind === 'company' ? 'نام شرکت / کارگاه *' : 'نام و نام خانوادگی *'}>
             <Input autoFocus value={form.name} onChange={(e) => set({ name: e.target.value })} />
           </Field>
-          <Field label={form.kind === 'company' ? 'نام رابط' : 'شرکت'}>
+          <Field label={form.kind === 'company' ? 'رابط اصلی' : 'شرکت'} hint={form.kind === 'company' ? 'افراد و رابط‌های بیشتر را در پرونده مشتری اضافه کنید' : undefined}>
             <Input value={form.company} onChange={(e) => set({ company: e.target.value })} />
           </Field>
           <Field label="سمت">

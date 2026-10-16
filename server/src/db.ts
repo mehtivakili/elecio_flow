@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { normalizeSearchText } from '../../shared/search.ts';
 
 /**
@@ -10,8 +11,17 @@ import { normalizeSearchText } from '../../shared/search.ts';
  * talk to `q`, `one`, `run` and `tx`, never to the driver.
  */
 
-const DATA_DIR = process.env.ELECIO_DATA_DIR || path.join(process.cwd(), 'data');
+/**
+ * Where the database lives, in order of preference:
+ *  1. ELECIO_DATA_DIR (explicit, e.g. on the server)
+ *  2. elecio-flow.db in the project root — the file shipped with the project
+ *  3. server/data (first-run default; seeded automatically)
+ */
+const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const ROOT_DB = path.join(PROJECT_ROOT, 'elecio-flow.db');
+export const DATA_DIR = process.env.ELECIO_DATA_DIR || (fs.existsSync(ROOT_DB) ? PROJECT_ROOT : path.join(process.cwd(), 'data'));
 export const DB_PATH = path.join(DATA_DIR, 'elecio-flow.db');
+export const BACKUP_DIR = path.join(DATA_DIR, 'backups');
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS orgs (
@@ -515,6 +525,7 @@ export function getDb(): DatabaseSync {
   db.function('normalize_search', { deterministic: true }, normalizeSearchText);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
   db.exec(SCHEMA);
+  migrate(db);
   // Backfill checkpoints for databases created before per-device tracking.
   // The current work-order stage proves that all preceding stages were passed.
   db.exec(`
@@ -536,6 +547,169 @@ export function getDb(): DatabaseSync {
   return db;
 }
 
+/* ───────────── Schema migrations ─────────────
+ * Versioned with PRAGMA user_version. Every step is idempotent (columns are added
+ * only when missing), so an older database file dropped into the project is brought
+ * up to date on start-up — after a safety copy is written to backups/.
+ */
+
+function addColumn(database: DatabaseSync, table: string, column: string, definition: string) {
+  const exists = (database.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some((c) => c.name === column);
+  if (!exists) database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
+
+const MIGRATIONS: { version: number; run: (database: DatabaseSync) => void }[] = [
+  {
+    // Archive instead of hard-delete, multi-role users, company contact people, notes,
+    // manually entered historical sales and devices without known serials.
+    version: 1,
+    run: (d) => {
+      for (const table of ['contacts', 'items', 'suppliers', 'orders', 'purchase_orders', 'tickets', 'units']) {
+        addColumn(d, table, 'deleted_at', 'INTEGER');
+      }
+      addColumn(d, 'users', 'roles_json', "TEXT NOT NULL DEFAULT '[]'");
+      addColumn(d, 'orders', 'legacy', 'INTEGER NOT NULL DEFAULT 0');
+      addColumn(d, 'orders', 'legacy_date', 'INTEGER');
+      addColumn(d, 'units', 'serial_unknown', 'INTEGER NOT NULL DEFAULT 0');
+      addColumn(d, 'units', 'manual', 'INTEGER NOT NULL DEFAULT 0');
+      addColumn(d, 'units', 'sale_price', 'INTEGER');
+      d.exec(`
+        CREATE TABLE IF NOT EXISTS contact_people (
+          id TEXT PRIMARY KEY,
+          org_id TEXT NOT NULL,
+          contact_id TEXT NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+          name TEXT NOT NULL,
+          title TEXT DEFAULT '',
+          department TEXT DEFAULT '',
+          buying_role TEXT DEFAULT '',
+          phones_json TEXT NOT NULL DEFAULT '[]',
+          email TEXT DEFAULT '',
+          rating INTEGER NOT NULL DEFAULT 0,
+          is_primary INTEGER NOT NULL DEFAULT 0,
+          notes TEXT DEFAULT '',
+          sort_order INTEGER NOT NULL DEFAULT 0,
+          created_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_people_contact ON contact_people(contact_id, sort_order);
+
+        CREATE TABLE IF NOT EXISTS notes (
+          id TEXT PRIMARY KEY,
+          org_id TEXT NOT NULL,
+          author_id TEXT NOT NULL,
+          title TEXT DEFAULT '',
+          body TEXT NOT NULL DEFAULT '',
+          color TEXT NOT NULL DEFAULT 'iris',
+          visibility TEXT NOT NULL DEFAULT 'private',
+          recipients_json TEXT NOT NULL DEFAULT '[]',
+          ref_type TEXT,
+          ref_id TEXT,
+          pinned INTEGER NOT NULL DEFAULT 0,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_notes_org ON notes(org_id, updated_at DESC);
+      `);
+      // Each company's single "رابط" (stored on the contact) becomes its first contact person.
+      d.exec(`
+        INSERT INTO contact_people (id, org_id, contact_id, name, title, phones_json, is_primary, sort_order, created_at)
+        SELECT 'ppl_' || c.id, c.org_id, c.id, c.company, COALESCE(c.job_title, ''), c.phones_json, 1, 0, c.created_at
+        FROM contacts c
+        WHERE TRIM(COALESCE(c.company, '')) != ''
+          AND NOT EXISTS (SELECT 1 FROM contact_people p WHERE p.contact_id = c.id);
+      `);
+    },
+  },
+  {
+    // Scanned invoices / receipts stored inside the database (so a backup or an uploaded
+    // .db file carries them), several people per production stage, sales invoice numbers.
+    version: 2,
+    run: (d) => {
+      d.exec(`
+        CREATE TABLE IF NOT EXISTS attachments (
+          id TEXT PRIMARY KEY,
+          org_id TEXT NOT NULL,
+          kind TEXT NOT NULL DEFAULT 'other',
+          title TEXT NOT NULL DEFAULT '',
+          doc_number TEXT NOT NULL DEFAULT '',
+          doc_date INTEGER,
+          amount INTEGER,
+          contact_id TEXT,
+          order_id TEXT,
+          supplier_id TEXT,
+          po_id TEXT,
+          file_name TEXT NOT NULL,
+          mime TEXT NOT NULL,
+          size INTEGER NOT NULL,
+          data BLOB NOT NULL,
+          note TEXT NOT NULL DEFAULT '',
+          uploaded_by TEXT,
+          created_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_attachments_contact ON attachments(contact_id);
+        CREATE INDEX IF NOT EXISTS idx_attachments_order ON attachments(order_id);
+        CREATE INDEX IF NOT EXISTS idx_attachments_supplier ON attachments(supplier_id);
+        CREATE INDEX IF NOT EXISTS idx_attachments_po ON attachments(po_id);
+
+        CREATE TABLE IF NOT EXISTS work_order_crew (
+          id TEXT PRIMARY KEY,
+          org_id TEXT NOT NULL,
+          work_order_id TEXT NOT NULL REFERENCES work_orders(id) ON DELETE CASCADE,
+          stage TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          role TEXT NOT NULL DEFAULT 'assigned',
+          added_by TEXT,
+          added_at INTEGER NOT NULL,
+          UNIQUE (work_order_id, stage, user_id, role)
+        );
+        CREATE INDEX IF NOT EXISTS idx_work_order_crew_user ON work_order_crew(user_id, role);
+      `);
+      addColumn(d, 'unit_process_steps', 'performers_json', "TEXT NOT NULL DEFAULT '[]'");
+      addColumn(d, 'orders', 'invoice_number', 'TEXT');
+      addColumn(d, 'orders', 'invoiced_at', 'INTEGER');
+      // Whoever recorded a device step so far is the best record of who performed it.
+      d.exec(`UPDATE unit_process_steps SET performers_json = json_array(completed_by)
+              WHERE completed_by IS NOT NULL AND performers_json = '[]'`);
+      // The work order's single assignee becomes the assigned person of every stage it has reached.
+      d.exec(`
+        INSERT OR IGNORE INTO work_order_crew (id, org_id, work_order_id, stage, user_id, role, added_by, added_at)
+        SELECT 'woc_mig_' || s.id, w.org_id, w.id, s.stage, w.assignee_id, 'assigned', NULL, s.entered_at
+        FROM work_orders w JOIN stage_log s ON s.entity_type = 'work_order' AND s.entity_id = w.id
+        WHERE w.assignee_id IS NOT NULL;
+      `);
+    },
+  },
+];
+
+function migrate(database: DatabaseSync) {
+  const current = Number((database.prepare('PRAGMA user_version').get() as { user_version: number }).user_version);
+  const pending = MIGRATIONS.filter((m) => m.version > current);
+  if (!pending.length) return;
+  const hasData = Number((database.prepare('SELECT COUNT(*) AS n FROM orgs').get() as { n: number }).n) > 0;
+  if (hasData) {
+    fs.mkdirSync(BACKUP_DIR, { recursive: true });
+    const file = path.join(BACKUP_DIR, `before-upgrade-v${current}-to-v${pending.at(-1)!.version}-${Date.now()}.db`);
+    database.exec(`VACUUM INTO '${file.replace(/'/g, "''")}'`);
+    console.log(`[elecio-flow] database backed up before upgrade → ${file}`);
+  }
+  for (const m of pending) {
+    database.exec('BEGIN');
+    try {
+      m.run(database);
+      database.exec(`PRAGMA user_version = ${m.version}`);
+      database.exec('COMMIT');
+    } catch (err) {
+      database.exec('ROLLBACK');
+      throw err;
+    }
+  }
+  console.log(`[elecio-flow] database upgraded to schema v${pending.at(-1)!.version}`);
+}
+
+/** Closes the connection so the file can be replaced (restore); the next query reopens it. */
+export function closeDb() {
+  if (db) { db.close(); db = null; }
+}
+
 export function resetDb() {
   if (db) { db.close(); db = null; }
   for (const suffix of ['', '-wal', '-shm']) {
@@ -545,10 +719,10 @@ export function resetDb() {
 
 /* ───────────── Query helpers ───────────── */
 
-type Param = string | number | bigint | null | undefined | boolean;
+type Param = string | number | bigint | null | undefined | boolean | Uint8Array;
 
 function bind(params: Param[]) {
-  return params.map((p) => (p === undefined ? null : typeof p === 'boolean' ? (p ? 1 : 0) : p)) as (string | number | bigint | null)[];
+  return params.map((p) => (p === undefined ? null : typeof p === 'boolean' ? (p ? 1 : 0) : p)) as (string | number | bigint | null | Uint8Array)[];
 }
 
 // Rows are dynamic (camelCased columns + joins); typed at the edges, not here.

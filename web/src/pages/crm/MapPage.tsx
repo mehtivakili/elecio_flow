@@ -1,66 +1,115 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import L from 'leaflet';
-import { Map as MapIcon, Users, Cpu, LifeBuoy, Crosshair } from 'lucide-react';
+import { Map as MapIcon, Users, Cpu, LifeBuoy, Crosshair, MapPinOff, MapPinPlus, ChevronLeft } from 'lucide-react';
 import clsx from 'clsx';
 import { IRAN_CENTER, IRAN_PROVINCES, getMapCenter } from '@shared/iran-locations';
-import { useApi } from '../../lib/hooks';
+import { put } from '../../lib/api';
+import { useAction, useApi } from '../../lib/hooks';
 import { useSession } from '../../lib/session';
-import { Card, PageHeader, Select, Spinner, Tabs } from '../../components/ui';
+import { useIsMobile } from '../../lib/media';
+import { Button, Card, Modal, PageHeader, Select, Sheet, Spinner, Tabs } from '../../components/ui';
 import { LifecyclePill } from '../../components/domain';
 import { ScoreMeter } from '../../components/charts';
+import { LocationPicker } from '../../components/crm';
 import { num } from '../../lib/format';
 
 type Layer = 'pipeline' | 'installed' | 'service';
 interface Pin { contact: any; pos: [number, number]; label: string }
+interface ApproxGroup { key: string; title: string; contacts: any[] }
 
-/** Deterministic jitter so contacts without exact coordinates don't stack on the province centre. */
-function offset(id: string): [number, number] {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = ((h << 5) - h + id.charCodeAt(i)) | 0;
-  const angle = (Math.abs(h) % 360) * Math.PI / 180;
-  const r = 0.03 + (Math.abs(h >> 8) % 20) / 1000;
-  return [Math.sin(angle) * r, Math.cos(angle) * r];
+const fa = (n: number) => new Intl.NumberFormat('fa-IR').format(n);
+/** Unlocated customers sit a little north of the province centre, so they never hide real pins. */
+const APPROX_LIFT = 0.22;
+/**
+ * Zoomed out, customers without an exact address are counted inside the ordinary clusters.
+ * From this zoom on, each province's unlocated customers get their own (slightly larger,
+ * dashed) pie marker that opens their list.
+ */
+const SPLIT_ZOOM = 7;
+const PIN_SIZE = 18;
+const APPROX_SIZE = 26;
+
+interface Point { pos: [number, number]; contacts: any[]; approx: boolean; key: string; title: string }
+
+/**
+ * Groups markers that would overlap on screen (closer than `radius` pixels at this zoom),
+ * so neighbouring groups always merge instead of sitting on top of each other.
+ * Centres are weighted by how many customers each marker stands for.
+ */
+function cluster(points: Point[], zoom: number, project: (pos: [number, number]) => L.Point, radius = 40) {
+  if (zoom >= 13) return points.map((p) => ({ pins: [p], pos: p.pos }));
+  const groups: { pins: Point[]; x: number; y: number; w: number; lat: number; lng: number }[] = [];
+  for (const p of [...points].sort((a, b) => b.contacts.length - a.contacts.length)) {
+    const pt = project(p.pos);
+    const w = Math.max(1, p.contacts.length);
+    const g = groups.find((x) => Math.hypot(x.x - pt.x, x.y - pt.y) < radius);
+    if (!g) { groups.push({ pins: [p], x: pt.x, y: pt.y, w, lat: p.pos[0] * w, lng: p.pos[1] * w }); continue; }
+    g.pins.push(p);
+    g.x = (g.x * g.w + pt.x * w) / (g.w + w);
+    g.y = (g.y * g.w + pt.y * w) / (g.w + w);
+    g.lat += p.pos[0] * w; g.lng += p.pos[1] * w; g.w += w;
+  }
+  return groups.map((g) => ({ pins: g.pins, pos: [g.lat / g.w, g.lng / g.w] as [number, number] }));
 }
 
-function cluster(pins: Pin[], zoom: number) {
-  const cell = zoom <= 5 ? 1.6 : zoom === 6 ? 0.8 : zoom === 7 ? 0.35 : zoom <= 9 ? 0.12 : 0;
-  if (!cell) return pins.map((p) => ({ pins: [p], pos: p.pos }));
-  const groups = new Map<string, Pin[]>();
-  for (const p of pins) {
-    const key = `${Math.floor(p.pos[0] / cell)}:${Math.floor(p.pos[1] / cell)}`;
-    groups.set(key, [...(groups.get(key) ?? []), p]);
-  }
-  return [...groups.values()].map((g) => ({
-    pins: g,
-    pos: [g.reduce((s, p) => s + p.pos[0], 0) / g.length, g.reduce((s, p) => s + p.pos[1], 0) / g.length] as [number, number],
-  }));
+/** Conic gradient that keeps the stage mix visible inside one circle. */
+function pie(colors: string[]) {
+  const counts = new Map<string, number>();
+  colors.forEach((c) => counts.set(c, (counts.get(c) ?? 0) + 1));
+  if (counts.size === 1) return colors[0];
+  let acc = 0;
+  return `conic-gradient(${[...counts.entries()].map(([c, n]) => { const s = acc; acc += (n / colors.length) * 360; return `${c} ${s}deg ${acc}deg`; }).join(',')})`;
+}
+
+/** First address that has a province but no exact coordinates (only when none has coordinates). */
+function approxAddress(c: any) {
+  const addrs: any[] = c.addresses ?? [];
+  if (addrs.some((a) => a.lat != null && a.lng != null)) return null;
+  return addrs.find((a) => a.province) ?? null;
 }
 
 export default function MapPage() {
   const { settings, lifecycle } = useSession();
   const navigate = useNavigate();
+  const mobile = useIsMobile();
   const { data = [], isLoading } = useApi<any[]>('/map');
   const [layer, setLayer] = useState<Layer>('pipeline');
   const [hidden, setHidden] = useState<string[]>([]);
   const [province, setProvince] = useState('');
   const [zoom, setZoom] = useState(5);
   const [selected, setSelected] = useState<any>(null);
+  const [approx, setApprox] = useState<ApproxGroup | null>(null);
+  const [placing, setPlacing] = useState<any>(null);
   const box = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const layerGroup = useRef<L.LayerGroup | null>(null);
 
   const colorOf = (c: any) => layer === 'installed' ? '#0FD69D' : layer === 'service' ? '#FF499E' : lifecycle(c.stage)?.color ?? '#9DB4C0';
+  const inLayer = (c: any) => layer === 'pipeline' ? !hidden.includes(c.stage) : layer === 'installed' ? c.installedUnits > 0 : c.openTickets > 0;
 
-  const pins = useMemo<Pin[]>(() => data
-    .filter((c) => layer === 'pipeline' ? !hidden.includes(c.stage) : layer === 'installed' ? c.installedUnits > 0 : c.openTickets > 0)
-    .flatMap((c) => (c.addresses ?? []).map((a: any) => {
-      if (a.lat != null && a.lng != null) return { contact: c, pos: [a.lat, a.lng] as [number, number], label: a.title };
-      if (!a.province) return null;
-      const base = getMapCenter(a.province, a.county);
-      const [dy, dx] = offset(`${c.id}${a.id}`);
-      return { contact: c, pos: [base[0] + dy, base[1] + dx] as [number, number], label: a.title };
-    }).filter(Boolean) as Pin[]), [data, layer, hidden]);
+  // Exact pins: addresses with coordinates.
+  const pins = useMemo<Pin[]>(() => data.filter(inLayer).flatMap((c) => (c.addresses ?? [])
+    .filter((a: any) => a.lat != null && a.lng != null)
+    .map((a: any) => ({ contact: c, pos: [a.lat, a.lng] as [number, number], label: a.title }))),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [data, layer, hidden]);
+
+  // Customers we only know the province / city of — grouped per province.
+  const approxGroups = useMemo<(ApproxGroup & { pos: [number, number] })[]>(() => {
+    const groups = new Map<string, any[]>();
+    for (const c of data.filter(inLayer)) {
+      const a = approxAddress(c);
+      if (!a) continue;
+      groups.set(a.province, [...(groups.get(a.province) ?? []), c]);
+    }
+    return [...groups.entries()].map(([prov, contacts]) => {
+      const base = getMapCenter(prov, '');
+      return { key: prov, title: prov, contacts, pos: [base[0] + APPROX_LIFT, base[1]] as [number, number] };
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, layer, hidden]);
+  const unlocatedTotal = approxGroups.reduce((s, g) => s + g.contacts.length, 0);
 
   useEffect(() => {
     if (isLoading || !box.current || map.current) return;
@@ -75,31 +124,57 @@ export default function MapPage() {
 
   useEffect(() => {
     const group = layerGroup.current;
-    if (!group) return;
+    if (!group || !map.current) return;
     group.clearLayers();
-    for (const cl of cluster(pins, zoom)) {
-      const count = cl.pins.length;
-      let size = count > 1 ? Math.min(46, 24 + count * 2.5) : 18;
-      if (layer === 'installed') size = Math.min(48, 18 + cl.pins.reduce((s, p) => s + p.contact.installedUnits, 0) * 3);
-      // Conic gradient shows the stage mix inside a cluster — identity is also given by the legend and popup text.
-      const colors = cl.pins.map((p) => colorOf(p.contact));
-      const counts = new Map<string, number>();
-      colors.forEach((col) => counts.set(col, (counts.get(col) ?? 0) + 1));
-      let acc = 0;
-      const bg = counts.size === 1 ? colors[0] : `conic-gradient(${[...counts.entries()].map(([col, n]) => { const s = acc; acc += (n / count) * 360; return `${col} ${s}deg ${acc}deg`; }).join(',')})`;
-      const label = layer === 'installed' ? cl.pins.reduce((s, p) => s + p.contact.installedUnits, 0) : count > 1 ? count : '';
+    const points: Point[] = [
+      ...pins.map((p) => ({ pos: p.pos, contacts: [p.contact], approx: false, key: `${p.contact.id}:${p.label}`, title: p.contact.name })),
+      ...approxGroups.map((g) => ({ pos: g.pos, contacts: g.contacts, approx: true, key: g.key, title: g.title })),
+    ];
+    const split = zoom >= SPLIT_ZOOM;
+    const project = (pos: [number, number]) => map.current!.project(L.latLng(pos[0], pos[1]), zoom);
+    const groups = split
+      ? [...cluster(points.filter((p) => !p.approx), zoom, project), ...points.filter((p) => p.approx).map((p) => ({ pins: [p], pos: p.pos }))]
+      : cluster(points, zoom, project);
+
+    for (const cl of groups) {
+      const contacts = cl.pins.flatMap((p) => p.contacts);
+      const count = contacts.length;
+      const slices = pie(contacts.map(colorOf));
+      const units = contacts.reduce((sum, c) => sum + (c.installedUnits ?? 0), 0);
+
+      if (split && cl.pins[0].approx) {
+        // Unlocated customers of one province: dashed pie, a touch larger than a single pin.
+        const g = cl.pins[0];
+        const size = APPROX_SIZE + (count >= 10 ? 4 : 0);
+        const label = layer === 'installed' ? units : count;
+        const icon = L.divIcon({
+          className: '',
+          html: `<div class="map-pin map-pin-approx" style="width:${size}px;height:${size}px;background:${slices}"><span class="map-pin-hole">${fa(label)}</span><span class="map-pin-q">؟</span></div>`,
+          iconSize: [size, size], iconAnchor: [size / 2, size / 2],
+        });
+        const marker = L.marker(cl.pos, { icon, zIndexOffset: 500 }).addTo(group);
+        marker.on('click', () => { setSelected(null); setApprox({ key: g.key, title: g.title, contacts }); });
+        marker.bindTooltip(`${fa(count)} مخاطب بدون آدرس دقیق — ${g.title}`, { direction: 'top', offset: [0, -size / 2 - 2] });
+        continue;
+      }
+
+      let size = count > 1 ? Math.min(46, 24 + count * 2.5) : PIN_SIZE;
+      if (layer === 'installed') size = Math.min(48, 18 + units * 3);
+      const label = layer === 'installed' ? units : count > 1 ? count : 0;
       const icon = L.divIcon({
         className: '',
-        html: `<div class="map-pin" style="width:${size}px;height:${size}px;background:${bg}">${label ? new Intl.NumberFormat('fa-IR').format(Number(label)) : ''}</div>`,
+        html: `<div class="map-pin" style="width:${size}px;height:${size}px;background:${slices}">${label ? fa(label) : ''}</div>`,
         iconSize: [size, size], iconAnchor: [size / 2, size / 2],
       });
       const marker = L.marker(cl.pos, { icon }).addTo(group);
-      if (count === 1) marker.on('click', () => setSelected(cl.pins[0].contact));
-      else marker.on('click', () => map.current?.flyTo(cl.pos, Math.min(12, zoom + 2), { duration: 0.6 }));
-      marker.bindTooltip(count === 1 ? cl.pins[0].contact.name : `${new Intl.NumberFormat('fa-IR').format(count)} مخاطب`, { direction: 'top' });
+      const single = cl.pins.length === 1 && !cl.pins[0].approx && count === 1;
+      if (single) marker.on('click', () => { setApprox(null); setSelected(contacts[0]); });
+      else marker.on('click', () => map.current?.flyTo(cl.pos, Math.max(SPLIT_ZOOM, Math.min(12, zoom + 2)), { duration: 0.6 }));
+      const unlocated = cl.pins.filter((p) => p.approx).reduce((sum, p) => sum + p.contacts.length, 0);
+      marker.bindTooltip(single ? contacts[0].name : `${fa(count)} مخاطب${unlocated ? ` (${fa(unlocated)} بدون آدرس دقیق)` : ''}`, { direction: 'top', offset: [0, -size / 2 - 2] });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pins, zoom, layer]);
+  }, [pins, approxGroups, zoom, layer]);
 
   useEffect(() => {
     const p = IRAN_PROVINCES.find((x) => x.name === province);
@@ -108,12 +183,19 @@ export default function MapPage() {
 
   const byProvince = useMemo(() => {
     const counts: Record<string, number> = {};
-    for (const p of pins) {
-      const prov = p.contact.addresses?.[0]?.province;
+    for (const c of data.filter(inLayer)) {
+      const prov = c.addresses?.[0]?.province;
       if (prov) counts[prov] = (counts[prov] ?? 0) + 1;
     }
     return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 8);
-  }, [pins]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, layer, hidden]);
+
+  const showAllUnlocated = () => setApprox({ key: 'all', title: 'همه استان‌ها', contacts: approxGroups.flatMap((g) => g.contacts) });
+
+  const approxList = approx && (
+    <UnlocatedList group={approx} onOpen={(c) => navigate(`/crm/contacts/${c.id}`)} onPlace={setPlacing} />
+  );
 
   return (
     <div>
@@ -126,7 +208,7 @@ export default function MapPage() {
             <option value="">کل کشور</option>
             {IRAN_PROVINCES.map((p) => <option key={p.name}>{p.name}</option>)}
           </Select>
-          <Tabs value={layer} onChange={(v) => { setLayer(v); setSelected(null); }} tabs={[
+          <Tabs value={layer} onChange={(v) => { setLayer(v); setSelected(null); setApprox(null); }} tabs={[
             { key: 'pipeline', label: 'قیف فروش', icon: Users },
             { key: 'installed', label: 'دستگاه‌های نصب‌شده', icon: Cpu },
             { key: 'service', label: 'خدمات باز', icon: LifeBuoy },
@@ -134,25 +216,21 @@ export default function MapPage() {
         </>}
       />
       {isLoading ? <Spinner /> : (
-        <div className="grid gap-5 xl:grid-cols-[1fr_320px]">
+        <div className="grid gap-4 md:gap-5 xl:grid-cols-[1fr_340px]">
           <div className="glass relative overflow-hidden p-1.5">
-            <div ref={box} className="h-[calc(100vh-230px)] min-h-[460px] rounded-xl" />
+            <div ref={box} className="h-[calc(100dvh-300px)] min-h-[420px] rounded-xl md:h-[calc(100vh-230px)] md:min-h-[460px]" />
             <button onClick={() => { setProvince(''); map.current?.flyTo(IRAN_CENTER, 5); }} className="absolute bottom-6 left-6 z-[500] flex h-9 w-9 items-center justify-center rounded-xl bg-[#2b3a40] text-ink shadow-lg" title="نمای کشور"><Crosshair size={16} /></button>
+            {unlocatedTotal > 0 && (
+              <button onClick={showAllUnlocated} className="absolute right-4 top-4 z-[500] flex items-center gap-2 rounded-xl border border-amber/40 bg-[#2b3a40]/95 px-3 py-2 text-xs font-semibold text-amber shadow-lg">
+                <MapPinOff size={15} />{num(unlocatedTotal)} مخاطب بدون آدرس دقیق
+              </button>
+            )}
           </div>
-          <div className="space-y-5">
-            {layer === 'pipeline' && (
-              <Card title="راهنما و فیلتر مراحل" pad={false} bodyClass="p-3">
-                {settings.lifecycleStages.map((s) => {
-                  const n = data.filter((c) => c.stage === s.key).length;
-                  const off = hidden.includes(s.key);
-                  return (
-                    <button key={s.key} onClick={() => setHidden(off ? hidden.filter((h) => h !== s.key) : [...hidden, s.key])}
-                      className={clsx('flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm transition hover:bg-ink/[0.05]', off && 'opacity-40')}>
-                      <span className="flex items-center gap-2"><span className="h-3 w-3 rounded-full" style={{ background: s.color }} />{s.label}</span>
-                      <span className="num text-mist">{num(n)}</span>
-                    </button>
-                  );
-                })}
+          <div className="space-y-4 md:space-y-5">
+            {approx && !mobile && (
+              <Card title={`بدون آدرس دقیق — ${approx.title}`} subtitle="موقعیت تقریبی؛ برای ثبت دقیق، «ثبت روی نقشه» را بزنید" icon={MapPinOff} pad={false} bodyClass="p-2"
+                actions={<Button size="sm" variant="ghost" onClick={() => setApprox(null)}>بستن</Button>}>
+                {approxList}
               </Card>
             )}
             {selected ? (
@@ -167,7 +245,27 @@ export default function MapPage() {
                   <button onClick={() => navigate(`/crm/contacts/${selected.id}`)} className="w-full rounded-xl bg-iris py-2 text-sm font-medium text-night">مشاهده پرونده</button>
                 </div>
               </Card>
-            ) : (
+            ) : null}
+            {layer === 'pipeline' && (
+              <Card title="راهنما و فیلتر مراحل" pad={false} bodyClass="p-3">
+                {settings.lifecycleStages.map((s) => {
+                  const n = data.filter((c) => c.stage === s.key).length;
+                  const off = hidden.includes(s.key);
+                  return (
+                    <button key={s.key} onClick={() => setHidden(off ? hidden.filter((h) => h !== s.key) : [...hidden, s.key])}
+                      className={clsx('flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm transition hover:bg-ink/[0.05]', off && 'opacity-40')}>
+                      <span className="flex items-center gap-2"><span className="h-3 w-3 rounded-full" style={{ background: s.color }} />{s.label}</span>
+                      <span className="num text-mist">{num(n)}</span>
+                    </button>
+                  );
+                })}
+                <div className="mt-2 flex items-center gap-2.5 border-t border-line/60 px-3 pt-3 text-xs leading-5 text-mist">
+                  <span className="map-pin map-pin-approx relative inline-flex h-7 w-7 shrink-0" style={{ background: 'conic-gradient(#F5B85A 0 180deg, #0FD69D 180deg 360deg)' }}><span className="map-pin-hole" /></span>
+                  دایره خط‌چین با «؟» = مخاطبانی که فقط استان/شهرشان را داریم (بالای مرکز استان). در نمای دور با بقیه شمرده می‌شوند و با نزدیک‌شدن جدا نمایش داده می‌شوند.
+                </div>
+              </Card>
+            )}
+            {!selected && !approx && (
               <Card title="بیشترین تراکم" subtitle="بر اساس لایه فعلی">
                 <ul className="space-y-2 text-sm">
                   {byProvince.map(([prov, n]) => (
@@ -184,6 +282,62 @@ export default function MapPage() {
           </div>
         </div>
       )}
+      {mobile && (
+        <Sheet open={!!approx} onClose={() => setApprox(null)} title={`بدون آدرس دقیق — ${approx?.title ?? ''}`} subtitle="برای ثبت دقیق، «ثبت روی نقشه» را بزنید" icon={MapPinOff} bodyClass="!px-2">
+          {approxList}
+        </Sheet>
+      )}
+      <PlaceOnMap contact={placing} onClose={() => setPlacing(null)} />
     </div>
+  );
+}
+
+function UnlocatedList({ group, onOpen, onPlace }: { group: ApproxGroup; onOpen: (c: any) => void; onPlace: (c: any) => void }) {
+  return (
+    <ul className="max-h-[60vh] space-y-1 overflow-y-auto">
+      {group.contacts.map((c) => {
+        const a = approxAddress(c);
+        return (
+          <li key={c.id} className="flex items-center gap-2 rounded-xl px-2 py-2 hover:bg-ink/[0.04]">
+            <button type="button" onClick={() => onOpen(c)} className="min-w-0 flex-1 text-right">
+              <div className="flex items-center gap-2">
+                <span className="truncate text-sm font-semibold text-ink">{c.name}</span>
+                <LifecyclePill stage={c.stage} />
+              </div>
+              <div className="truncate text-[11.5px] text-mist">{[a?.province, a?.county, a?.address].filter(Boolean).join('، ') || '—'}</div>
+            </button>
+            <Button size="sm" variant="action" icon={MapPinPlus} onClick={() => onPlace(c)}><span className="hidden sm:inline">ثبت روی نقشه</span></Button>
+            <button type="button" onClick={() => onOpen(c)} className="text-mist" aria-label="پرونده"><ChevronLeft size={16} /></button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/** Pick the exact location of a customer's address (with address search) and save it. */
+function PlaceOnMap({ contact, onClose }: { contact: any | null; onClose: () => void }) {
+  const [pos, setPos] = useState<{ lat: number; lng: number } | null>(null);
+  useEffect(() => setPos(null), [contact]);
+  const address = contact ? approxAddress(contact) : null;
+  const save = useAction(() => put(`/contacts/${contact.id}`, {
+    addresses: (contact.addresses ?? []).map((a: any) => (a.id === address?.id ? { ...a, lat: pos!.lat, lng: pos!.lng } : a)),
+  }), { success: 'موقعیت روی نقشه ثبت شد', onSuccess: onClose });
+  return (
+    <Modal open={!!contact} onClose={onClose} icon={MapPinPlus} size="lg" title={`ثبت موقعیت ${contact?.name ?? ''}`}
+      subtitle={address ? [address.title, address.province, address.county, address.address].filter(Boolean).join('، ') : undefined}
+      footer={<><Button variant="ghost" onClick={onClose}>انصراف</Button><Button variant="primary" disabled={!pos} loading={save.isPending} onClick={() => save.mutate(undefined)}>ذخیره موقعیت</Button></>}>
+      {contact && (
+        <LocationPicker
+          key={contact.id}
+          lat={pos?.lat ?? null}
+          lng={pos?.lng ?? null}
+          province={address?.province}
+          searchHint={[address?.county, address?.province].filter(Boolean).join('، ')}
+          height={360}
+          onChange={(lat, lng) => setPos({ lat, lng })}
+        />
+      )}
+    </Modal>
   );
 }

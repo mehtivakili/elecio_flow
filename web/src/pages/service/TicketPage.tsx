@@ -33,7 +33,7 @@ export default function TicketPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader icon={LifeBuoy}
+      <PageHeader hero eyebrow="تیکت خدمات" icon={LifeBuoy}
         title={<span className="flex flex-wrap items-center gap-3">{t.subject}<TicketStatusPill status={t.status} /></span>}
         subtitle={<span className="flex flex-wrap items-center gap-2"><span className="ltr">{t.number}</span>·<TicketTypePill type={t.type} /><PriorityPill priority={t.priority} />· ثبت {relative(t.createdAt)}</span>}
         actions={open ? <>

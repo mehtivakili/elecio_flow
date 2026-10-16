@@ -101,6 +101,31 @@ export interface WorkspaceSettings {
   ticketTypes: OptionDef[];
   ticketSlaHours: Record<'urgent' | 'high' | 'normal' | 'low', number>;
   expenseCategories: string[];
+  invoice: InvoiceSettings;
+}
+
+/**
+ * The printable proforma / sales invoice. Text fields may contain placeholders that are
+ * filled per document: {شماره} {تاریخ} {مشتری} {مبلغ_کل} {مانده} {اعتبار_روز}
+ */
+export interface InvoiceSettings {
+  sellerName: string;
+  economicCode: string;
+  nationalId: string;
+  registrationNo: string;
+  postalCode: string;
+  address: string;
+  phone: string;
+  website: string;
+  invoicePrefix: string;
+  proformaValidityDays: number;
+  proformaTitle: string;
+  invoiceTitle: string;
+  proformaTerms: string;
+  invoiceTerms: string;
+  bankInfo: string;
+  footer: string;
+  showSignatures: boolean;
 }
 
 export const ELECIO_DEFAULTS: WorkspaceSettings = {
@@ -252,6 +277,25 @@ export const ELECIO_DEFAULTS: WorkspaceSettings = {
   ],
   ticketSlaHours: { urgent: 4, high: 24, normal: 72, low: 168 },
   expenseCategories: ['خرید قطعات', 'حمل‌ونقل و گمرک', 'دستمزد', 'اجاره و سربار', 'بازاریابی', 'سفر و نصب', 'ابزار و تجهیزات', 'سایر'],
+  invoice: {
+    sellerName: 'الکیو',
+    economicCode: '',
+    nationalId: '',
+    registrationNo: '',
+    postalCode: '',
+    address: '',
+    phone: '',
+    website: '',
+    invoicePrefix: 'INV',
+    proformaValidityDays: 7,
+    proformaTitle: 'پیش‌فاکتور',
+    invoiceTitle: 'صورتحساب فروش کالا و خدمات',
+    proformaTerms: 'این پیش‌فاکتور تا {اعتبار_روز} روز از تاریخ صدور معتبر است.\nزمان تحویل پس از دریافت پیش‌پرداخت تعیین می‌شود.',
+    invoiceTerms: 'کالای فروخته‌شده مطابق شرایط گارانتی الکیو پشتیبانی می‌شود.',
+    bankInfo: '',
+    footer: 'با سپاس از اعتماد شما',
+    showSignatures: true,
+  },
 };
 
 /* ───────────────────────── Roles & permissions ───────────────────────── */
@@ -285,8 +329,19 @@ export const ROLE_MODULES: Record<Role, Module[]> = {
   viewer: [],
 };
 
-export function canWrite(role: Role, module: Module): boolean {
-  return ROLE_MODULES[role]?.includes(module) ?? false;
+/** A user may hold several roles; they can change a module if any of them allows it. */
+export function canWrite(roles: Role | Role[], module: Module): boolean {
+  return (Array.isArray(roles) ? roles : [roles]).some((role) => ROLE_MODULES[role]?.includes(module));
+}
+
+export function isAdminRole(roles: Role | Role[]): boolean {
+  return (Array.isArray(roles) ? roles : [roles]).some((role) => role === 'owner' || role === 'admin');
+}
+
+/** Primary role first, then any extra roles, de-duplicated and validated. */
+export function effectiveRoles(primary: string, extra: unknown): Role[] {
+  const list = [primary, ...(Array.isArray(extra) ? extra : [])].filter((r): r is Role => (ROLES as readonly string[]).includes(r));
+  return [...new Set(list)];
 }
 
 /* ─────────────────────────── Fixed vocabularies ─────────────────────────── */
@@ -303,6 +358,7 @@ export const UNIT_STATUS: Record<string, { label: string; color: string }> = {
   installed: { label: 'نصب‌شده نزد مشتری', color: '#0FD69D' },
   in_repair: { label: 'در تعمیر', color: '#B48CF2' },
   scrapped: { label: 'اسقاط', color: '#5C6B73' },
+  registered: { label: 'ثبت دستی (بدون مشتری)', color: '#9DB4C0' },
 };
 
 export const PO_STATUS: Record<string, { label: string; color: string }> = {
@@ -325,6 +381,8 @@ export const TICKET_STATUS: Record<string, { label: string; color: string }> = {
 };
 
 export const MOVE_KINDS: Record<string, string> = {
+  legacy_sale: 'ثبت فروش قبلی (بدون اثر بر موجودی)',
+  manual_unit: 'ثبت دستی دستگاه (بدون اثر بر موجودی)',
   receipt: 'ورود به انبار',
   issue: 'خروج از انبار',
   transfer: 'انتقال بین انبار',
@@ -357,6 +415,17 @@ export const ITEM_KINDS: Record<string, string> = {
   product: 'محصول نهایی',
   component: 'قطعه / مواد اولیه',
   service: 'خدمت',
+};
+
+/** Scanned / uploaded documents kept with a customer, order, supplier or purchase order. */
+export const ATTACHMENT_KINDS: Record<string, { label: string; side: 'sales' | 'purchase' | 'any' }> = {
+  sales_invoice: { label: 'فاکتور فروش', side: 'sales' },
+  proforma: { label: 'پیش‌فاکتور', side: 'sales' },
+  contract: { label: 'قرارداد', side: 'any' },
+  purchase_invoice: { label: 'فاکتور خرید', side: 'purchase' },
+  receipt: { label: 'رسید / حواله', side: 'any' },
+  payment: { label: 'رسید پرداخت', side: 'any' },
+  other: { label: 'سایر اسناد', side: 'any' },
 };
 
 export const PAYMENT_METHODS: Record<string, string> = {

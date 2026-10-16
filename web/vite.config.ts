@@ -8,8 +8,9 @@ export default defineConfig({
     alias: { '@shared': path.resolve(__dirname, '../shared') },
   },
   server: {
-    port: 5180,
+    // Overridable so a second copy (e.g. against a test database) can run beside the usual one.
+    port: Number(process.env.ELECIO_WEB_PORT) || 5180,
     fs: { allow: ['..'] },
-    proxy: { '/api': 'http://localhost:4600' },
+    proxy: { '/api': `http://localhost:${Number(process.env.ELECIO_API_PORT) || 4600}` },
   },
 });

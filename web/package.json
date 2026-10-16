@@ -12,8 +12,11 @@
   "dependencies": {
     "@tanstack/react-query": "^5.66.9",
     "clsx": "^2.1.1",
+    "html-to-image": "^1.11.11",
+    "jspdf": "^2.5.2",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.471.0",
+    "pdfjs-dist": "^4.10.38",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.2.0"

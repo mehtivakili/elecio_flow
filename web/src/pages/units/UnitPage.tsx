@@ -30,7 +30,7 @@ export default function UnitPage() {
   const { key } = useParams();
   const navigate = useNavigate();
   const confirm = useConfirm();
-  const { settings } = useSession();
+  const { settings, isAdmin } = useSession();
   const { data, isLoading, error } = useApi<any>(`/units/${encodeURIComponent(key!)}`);
   const update = useAction((body: any) => put(`/units/${data.unit.id}`, body), { success: 'شناسنامه دستگاه به‌روز شد' });
   const addNote = useAction((summary: string) => post(`/units/${data.unit.id}/events`, { summary }), { success: 'یادداشت ثبت شد' });
@@ -42,10 +42,16 @@ export default function UnitPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader icon={Cpu}
-        title={<span className="flex items-center gap-3"><span className="ltr font-mono">{u.serial}</span><UnitStatusPill status={u.status} /></span>}
+      <PageHeader hero eyebrow="شناسنامه دستگاه" icon={Cpu}
+        title={<span className="flex items-center gap-3">{u.serialUnknown ? <span className="text-amber">دستگاه بدون سریال</span> : <span className="ltr font-mono">{u.serial}</span>}<UnitStatusPill status={u.status} />{!!u.manual && <span className="chip bg-lilac/15 text-lilac">ثبت دستی</span>}</span>}
         subtitle={<span className="flex flex-wrap items-center gap-3">{u.itemName}{atCustomer && <WarrantyBadge until={u.warrantyUntil} />}</span>}
         actions={<>
+          {isAdmin && (u.serialUnknown || u.manual) && (
+            <Button variant={u.serialUnknown ? 'action' : 'outline'} icon={Bookmark} onClick={async () => {
+              const v = await confirm({ title: u.serialUnknown ? 'ثبت شماره سریال' : 'ویرایش شماره سریال', confirm: 'ثبت', input: { label: 'شماره سریال', placeholder: 'ELC-E1-0001', required: true } });
+              if (v) update.mutate({ serial: v });
+            }}>{u.serialUnknown ? 'ثبت شماره سریال' : 'ویرایش سریال'}</Button>
+          )}
           <Button variant="ghost" icon={StickyNote} onClick={async () => { const t = await confirm({ title: 'افزودن یادداشت به شناسنامه', input: { label: 'یادداشت', required: true } }); if (t) addNote.mutate(t); }}>یادداشت</Button>
           <Button variant="outline" icon={Upload} onClick={async () => { const v = await confirm({ title: 'ثبت به‌روزرسانی فریمور', input: { label: 'نسخه جدید', placeholder: '3.3.0', required: true } }); if (v) update.mutate({ fwVersion: v }); }}>به‌روزرسانی فریمور</Button>
           {['in_stock', 'qc_failed', 'in_production'].includes(u.status) && (

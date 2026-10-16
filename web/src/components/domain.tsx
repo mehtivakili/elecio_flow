@@ -71,11 +71,12 @@ export function ContactLink({ id, name }: { id?: string | null; name?: string | 
 
 /* ───────────── Data-bound pickers ───────────── */
 
-export function ContactPicker({ value, onChange, placeholder = 'انتخاب مشتری…' }: { value: string | null | undefined; onChange: (v: string | null) => void; placeholder?: string }) {
+/** `stages` limits the list (e.g. ['customer'] = only customers); the current value always stays listed. */
+export function ContactPicker({ value, onChange, placeholder = 'انتخاب مشتری…', clearable, stages }: { value: string | null | undefined; onChange: (v: string | null) => void; placeholder?: string; clearable?: boolean; stages?: string[] }) {
   const { data = [] } = useApi<any[]>('/contacts');
   const { lifecycle } = useSession();
-  const options: PickOption[] = data.map((c) => ({ value: c.id, label: c.name, hint: lifecycle(c.stage)?.label, color: lifecycle(c.stage)?.color }));
-  return <Picker options={options} value={value} onChange={onChange} placeholder={placeholder} />;
+  const options: PickOption[] = data.filter((c) => !stages || stages.includes(c.stage) || c.id === value).map((c) => ({ value: c.id, label: c.name, hint: lifecycle(c.stage)?.label, color: lifecycle(c.stage)?.color }));
+  return <Picker options={options} value={value} onChange={onChange} placeholder={placeholder} clearable={clearable} />;
 }
 
 export function ItemPicker({ value, onChange, kinds, placeholder = 'انتخاب کالا…' }: { value: string | null | undefined; onChange: (v: string | null) => void; kinds?: string[]; placeholder?: string }) {

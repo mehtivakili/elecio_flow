@@ -10,6 +10,10 @@ import { crmRouter } from './routes/crm.ts';
 import { inventoryRouter, supplyRouter } from './routes/supply.ts';
 import { ordersRouter, productionRouter, serviceRouter, unitsRouter } from './routes/operations.ts';
 import { financeRouter, insightsRouter, tasksRouter } from './routes/insights.ts';
+import { adminRouter, runScheduledBackup } from './routes/admin.ts';
+import { notesRouter } from './routes/notes.ts';
+import { filesRouter } from './routes/files.ts';
+import { DB_PATH, closeDb } from './db.ts';
 import { rescoreOrg } from './services/crm.ts';
 import { seed } from './seed.ts';
 
@@ -34,7 +38,7 @@ app.get('/api/health', (_req, res) => res.json({ ok: true }));
 app.use('/api/auth', authRouter);
 app.use('/api', metaRouter);
 app.use('/api', requireAuth, crmRouter, inventoryRouter, supplyRouter, ordersRouter, productionRouter, unitsRouter,
-  serviceRouter, tasksRouter, financeRouter, insightsRouter);
+  serviceRouter, tasksRouter, financeRouter, insightsRouter, notesRouter, adminRouter, filesRouter);
 app.use('/api', (_req, res) => res.status(404).json({ error: 'مسیر API پیدا نشد' }));
 app.use(errorHandler);
 
@@ -44,6 +48,22 @@ if (fs.existsSync(webDist)) {
   app.use(express.static(webDist));
   app.get('*', (_req, res) => res.sendFile(path.join(webDist, 'index.html')));
 }
+
+console.log(`[elecio-flow] database: ${DB_PATH}`);
+
+// On shutdown fold the write-ahead log back into the main file, so elecio-flow.db on
+// its own is always a complete database (it can be copied or uploaded as-is).
+for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+  process.once(signal, () => {
+    try { getDb().exec('PRAGMA wal_checkpoint(TRUNCATE)'); closeDb(); } catch { /* already closed */ }
+    process.exit(0);
+  });
+}
+
+// Automatic backups (schedule set by the owner in Settings → Backup).
+const backupTick = () => { try { runScheduledBackup(); } catch (err) { console.error('[elecio-flow] automatic backup failed', err); } };
+backupTick();
+setInterval(backupTick, 30 * 60_000);
 
 // Scores decay with time (stale leads cool down), so refresh them periodically.
 setInterval(() => {

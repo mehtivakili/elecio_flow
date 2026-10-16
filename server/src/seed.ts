@@ -51,7 +51,7 @@ export function seed(password = seedPassword()) {
       const id = uid('usr');
       insert('users', { id, orgId, username, fullName, passwordHash: hash, role, phone: '', active: 1, createdAt: start },
         ['id', 'org_id', 'username', 'full_name', 'password_hash', 'role', 'phone', 'active', 'created_at']);
-      people[username] = { id, orgId, role, fullName };
+      people[username] = { id, orgId, role, roles: [role], fullName };
     }
     const { admin, sara, reza, ali, neda } = people;
 

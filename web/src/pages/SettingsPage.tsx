@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
-  Settings, Building, Workflow, Users, Target, ClipboardCheck, Tags, Save, Plus, Trash2, ArrowUp, ArrowDown, ShieldCheck, Lock, UserPlus, RotateCcw,
+  Settings, Building, Workflow, Users, Target, ClipboardCheck, Tags, Save, Plus, Trash2, ArrowUp, ArrowDown, ShieldCheck, Lock, RotateCcw, DatabaseBackup, Archive, ReceiptText,
 } from 'lucide-react';
 import {
   ELECIO_DEFAULTS, MODULES, ROLES, ROLE_LABELS, ROLE_MODULES, type CustomFieldDef, type OptionDef, type StageDef, type WorkspaceSettings,
@@ -8,10 +9,12 @@ import {
 import { del, post, put } from '../lib/api';
 import { useAction } from '../lib/hooks';
 import { useSession } from '../lib/session';
-import { Button, Card, Field, Input, Modal, PageHeader, Pill, Select, Tabs, Toggle, useConfirm } from '../components/ui';
+import { Button, Card, Field, Input, PageHeader, Pill, Select, Tabs, Textarea, Toggle, useConfirm } from '../components/ui';
 import { num } from '../lib/format';
+import { ArchiveAdmin, BackupAdmin, UsersAdmin } from '../components/admin';
 
-type Tab = 'company' | 'workflows' | 'crm' | 'service' | 'users' | 'tags';
+type Tab = 'company' | 'invoice' | 'workflows' | 'crm' | 'service' | 'users' | 'tags' | 'backup' | 'archive';
+const TABS: Tab[] = ['company', 'invoice', 'workflows', 'crm', 'service', 'users', 'tags', 'backup', 'archive'];
 
 const GATES: Record<string, string> = {
   '': 'بدون کنترل', deposit: 'پیش‌پرداخت', full_payment: 'تسویه کامل', allocation: 'تخصیص کالا', shipment: 'ثبت محموله', kitting: 'کیتینگ قطعات', qc_pass: 'قبولی QC',
@@ -24,7 +27,9 @@ const MODULE_LABELS: Record<string, string> = {
 
 export default function SettingsPage() {
   const { settings, can } = useSession();
-  const [tab, setTab] = useState<Tab>('company');
+  const [params, setParams] = useSearchParams();
+  const tab: Tab = TABS.includes(params.get('tab') as Tab) ? params.get('tab') as Tab : 'company';
+  const setTab = (t: Tab) => setParams((p) => { p.set('tab', t); return p; }, { replace: true });
   const [draft, setDraft] = useState<WorkspaceSettings>(settings);
   useEffect(() => setDraft(settings), [settings]);
   const { refresh } = useSession();
@@ -42,10 +47,14 @@ export default function SettingsPage() {
     <div>
       <PageHeader icon={Settings} title="تنظیمات فضای کار" subtitle="همه مراحل، برچسب‌ها و قواعد سیستم قابل تنظیم است — پیش‌فرض‌ها مطابق فرایند الکیو تنظیم شده‌اند" />
       <Tabs className="mb-6 w-fit" value={tab} onChange={setTab} tabs={[
-        { key: 'company', label: 'سازمان', icon: Building }, { key: 'workflows', label: 'جریان‌های کاری', icon: Workflow },
+        { key: 'company', label: 'سازمان', icon: Building }, { key: 'invoice', label: 'قالب فاکتور', icon: ReceiptText },
+        { key: 'workflows', label: 'جریان‌های کاری', icon: Workflow },
         { key: 'crm', label: 'CRM و امتیازدهی', icon: Target }, { key: 'service', label: 'کیفیت و خدمات', icon: ClipboardCheck },
         { key: 'users', label: 'کاربران و دسترسی', icon: Users }, { key: 'tags', label: 'برچسب‌ها', icon: Tags },
+        { key: 'backup', label: 'پشتیبان‌گیری', icon: DatabaseBackup }, { key: 'archive', label: 'بایگانی', icon: Archive },
       ]} />
+      {tab === 'backup' && <BackupAdmin />}
+      {tab === 'archive' && <ArchiveAdmin />}
 
       {tab === 'company' && (
         <div className="space-y-6">
@@ -68,6 +77,46 @@ export default function SettingsPage() {
           <SaveBar keys={['company']} />
         </div>
       )}
+
+      {tab === 'invoice' && (() => {
+        const inv = { ...ELECIO_DEFAULTS.invoice, ...draft.invoice };
+        const setInv = (patch: Partial<typeof inv>) => set('invoice', { ...inv, ...patch });
+        const text = (k: keyof typeof inv, label: string, ltr = false, className = '') => (
+          <Field key={k} label={label} className={className}><Input className={ltr ? 'ltr' : ''} value={String(inv[k] ?? '')} onChange={(e) => setInv({ [k]: e.target.value } as Partial<typeof inv>)} /></Field>
+        );
+        return (
+          <div className="space-y-6">
+            <Card title="مشخصات فروشنده روی پیش‌فاکتور و فاکتور" icon={ReceiptText} subtitle="در سربرگ و بخش «مشخصات فروشنده» چاپ می‌شود">
+              <div className="grid gap-4 md:grid-cols-3">
+                {text('sellerName', 'نام فروشنده')}
+                {text('economicCode', 'شماره اقتصادی', true)}
+                {text('nationalId', 'شناسه ملی', true)}
+                {text('registrationNo', 'شماره ثبت', true)}
+                {text('postalCode', 'کد پستی', true)}
+                {text('phone', 'تلفن', true)}
+                {text('website', 'وب‌سایت', true)}
+                {text('address', 'نشانی', false, 'md:col-span-2')}
+              </div>
+            </Card>
+            <Card title="عنوان، شماره‌گذاری و متن‌ها" icon={ReceiptText}
+              subtitle="در متن‌ها می‌توانید از {شماره} {تاریخ} {مشتری} {مبلغ_کل} {مانده} {اعتبار_روز} استفاده کنید">
+              <div className="grid gap-4 md:grid-cols-3">
+                {text('proformaTitle', 'عنوان پیش‌فاکتور')}
+                {text('invoiceTitle', 'عنوان فاکتور فروش')}
+                {text('invoicePrefix', 'پیشوند شماره فاکتور', true)}
+                <Field label="اعتبار پیش‌فاکتور (روز)"><Input type="number" value={inv.proformaValidityDays} onChange={(e) => setInv({ proformaValidityDays: Number(e.target.value) })} /></Field>
+                <Field label="امضاها"><div className="pt-2"><Toggle checked={inv.showSignatures} onChange={(v) => setInv({ showSignatures: v })} label="کادر مهر و امضای فروشنده و خریدار" /></div></Field>
+                <div />
+                <Field label="شرایط پیش‌فاکتور" className="md:col-span-3"><Textarea value={inv.proformaTerms} onChange={(e) => setInv({ proformaTerms: e.target.value })} /></Field>
+                <Field label="شرایط فاکتور فروش" className="md:col-span-3"><Textarea value={inv.invoiceTerms} onChange={(e) => setInv({ invoiceTerms: e.target.value })} /></Field>
+                <Field label="اطلاعات پرداخت (شماره حساب / شبا / کارت)" className="md:col-span-3"><Textarea className="min-h-[60px]" value={inv.bankInfo} onChange={(e) => setInv({ bankInfo: e.target.value })} /></Field>
+                <Field label="پانویس" className="md:col-span-3"><Input value={inv.footer} onChange={(e) => setInv({ footer: e.target.value })} /></Field>
+              </div>
+            </Card>
+            <SaveBar keys={['invoice']} />
+          </div>
+        );
+      })()}
 
       {tab === 'workflows' && (
         <div className="space-y-6">
@@ -248,37 +297,11 @@ function CustomFieldsEditor({ fields, onChange }: { fields: CustomFieldDef[]; on
 /* ───────────────────────── Users & tags ───────────────────────── */
 
 function UsersTab() {
-  const { users, me, can, refresh } = useSession();
-  const [adding, setAdding] = useState(false);
-  const [f, setF] = useState<any>({ username: '', fullName: '', password: '', role: 'sales', phone: '' });
-  const create = useAction(() => post('/users', f), { success: 'کاربر ایجاد شد', onSuccess: () => { refresh(); setAdding(false); } });
-  const update = useAction(({ id, ...body }: any) => put(`/users/${id}`, body), { success: 'کاربر به‌روز شد', onSuccess: refresh });
-  const editable = can('settings');
   return (
-    <div className="space-y-6">
-      <Card title="کاربران" icon={Users} pad={false} bodyClass="overflow-x-auto" actions={editable && <Button size="sm" variant="action" icon={UserPlus} onClick={() => setAdding(true)}>کاربر جدید</Button>}>
-        <table className="tbl">
-          <thead><tr><th>نام</th><th>نام کاربری</th><th>نقش</th><th>وضعیت</th></tr></thead>
-          <tbody>{users.map((u) => (
-            <tr key={u.id}>
-              <td className="text-ink">{u.fullName}{u.id === me.id && <span className="mr-2 text-xs text-iris">(شما)</span>}</td>
-              <td className="ltr text-right text-xs">{u.username}</td>
-              <td>
-                {editable && u.id !== me.id && u.role !== 'owner' ? (
-                  <Select className="w-40" value={u.role} onChange={(e) => update.mutate({ id: u.id, role: e.target.value })}>
-                    {ROLES.filter((r) => r !== 'owner').map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
-                  </Select>
-                ) : <Pill color="#779BE7">{ROLE_LABELS[u.role]}</Pill>}
-              </td>
-              <td>{editable && u.id !== me.id && u.role !== 'owner'
-                ? <Toggle checked={u.active !== 0} onChange={(v) => update.mutate({ id: u.id, active: v })} label={u.active !== 0 ? 'فعال' : 'غیرفعال'} />
-                : <span className="text-xs text-mint">فعال</span>}</td>
-            </tr>
-          ))}</tbody>
-        </table>
-      </Card>
-      <Card title="ماتریس دسترسی نقش‌ها" subtitle="همه نقش‌ها همه بخش‌ها را می‌بینند؛ این جدول مجوز «تغییر» را نشان می‌دهد" icon={ShieldCheck} pad={false} bodyClass="overflow-x-auto">
-        <table className="tbl">
+    <div className="space-y-4 md:space-y-6">
+      <UsersAdmin />
+      <Card title="ماتریس دسترسی نقش‌ها" subtitle="همه نقش‌ها همه بخش‌ها را می‌بینند؛ این جدول مجوز «تغییر» را نشان می‌دهد. کاربر چندنقشی مجموع آن‌ها را دارد." icon={ShieldCheck} pad={false} bodyClass="overflow-x-auto">
+        <table className="tbl tbl-keep">
           <thead><tr><th>نقش</th>{MODULES.map((m) => <th key={m} className="text-center">{MODULE_LABELS[m]}</th>)}</tr></thead>
           <tbody>{ROLES.map((r) => (
             <tr key={r}><td className="whitespace-nowrap">{ROLE_LABELS[r]}</td>
@@ -287,15 +310,6 @@ function UsersTab() {
           ))}</tbody>
         </table>
       </Card>
-      <Modal open={adding} onClose={() => setAdding(false)} title="کاربر جدید" icon={UserPlus} size="sm"
-        footer={<><Button variant="ghost" onClick={() => setAdding(false)}>انصراف</Button><Button variant="primary" disabled={!f.username || !f.fullName || f.password.length < 12} loading={create.isPending} onClick={() => create.mutate(undefined)}>ایجاد</Button></>}>
-        <div className="space-y-4">
-          <Field label="نام کامل"><Input value={f.fullName} onChange={(e) => setF({ ...f, fullName: e.target.value })} /></Field>
-          <Field label="نام کاربری"><Input className="ltr" value={f.username} onChange={(e) => setF({ ...f, username: e.target.value })} /></Field>
-          <Field label="رمز عبور" hint="حداقل ۱۲ کاراکتر؛ فقط برای هش‌سازی به سرور ارسال می‌شود"><Input className="ltr" type="password" autoComplete="new-password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} /></Field>
-          <Field label="نقش"><Select value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}>{ROLES.filter((r) => r !== 'owner').map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}</Select></Field>
-        </div>
-      </Modal>
     </div>
   );
 }

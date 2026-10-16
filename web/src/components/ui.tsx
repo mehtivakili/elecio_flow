@@ -96,8 +96,46 @@ export interface FabAction { label: string; icon: Icon; onClick: () => void }
  * primary "create" action — a floating button on phones, a glow button on desktop.
  */
 export function PageHeader({
-  title, subtitle, icon: IconCmp, actions, children, fab, aside,
-}: { title: ReactNode; subtitle?: ReactNode; icon?: Icon; actions?: ReactNode; children?: ReactNode; fab?: FabAction; aside?: ReactNode }) {
+  title, subtitle, icon: IconCmp, actions, children, fab, aside, hero, eyebrow,
+}: {
+  title: ReactNode; subtitle?: ReactNode; icon?: Icon; actions?: ReactNode; children?: ReactNode; fab?: FabAction; aside?: ReactNode;
+  /** Record pages: the name gets a large, unmistakable title card. */
+  hero?: boolean;
+  /** Small label above a hero title, e.g. "مشتری" or "کالا". */
+  eyebrow?: ReactNode;
+}) {
+  if (hero) {
+    return (
+      <div className="mb-4 md:mb-6">
+        <div className="glass relative overflow-hidden p-4 md:p-6">
+          <div aria-hidden className="pointer-events-none absolute -left-16 -top-24 h-56 w-56 rounded-full bg-iris/20 blur-3xl" />
+          <div className="relative flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex min-w-0 items-center gap-3 md:gap-4">
+              {IconCmp && (
+                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-gradient-to-br from-iris/45 to-slate/25 text-ink shadow-glass md:h-14 md:w-14">
+                  <IconCmp size={24} />
+                </span>
+              )}
+              <div className="min-w-0 flex-1">
+                {eyebrow && <div className="mb-0.5 text-[11.5px] font-semibold text-iris">{eyebrow}</div>}
+                <h1 className="page-title text-[22px] font-extrabold leading-9 text-ink md:text-[28px] md:leading-10">{title}</h1>
+                {subtitle && <div className="mt-1 text-[13px] leading-6 text-mist md:text-sm">{subtitle}</div>}
+              </div>
+              {aside && <div className="shrink-0">{aside}</div>}
+            </div>
+            {(actions || fab) && (
+              <div className={clsx('page-actions flex flex-wrap items-center gap-2', !actions && 'hidden md:flex')}>
+                {actions}
+                {fab && <Button variant="glow" icon={fab.icon} onClick={fab.onClick} className="hidden md:inline-flex">{fab.label}</Button>}
+              </div>
+            )}
+          </div>
+          {children}
+        </div>
+        {fab && <Fab {...fab} />}
+      </div>
+    );
+  }
   return (
     <div className="mb-3 flex flex-col gap-2.5 md:mb-6 md:flex-row md:flex-wrap md:items-end md:justify-between md:gap-4">
       <div className="flex min-w-0 items-center gap-3">

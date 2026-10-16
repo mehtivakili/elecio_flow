@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Users, GitBranch, Flame, PhoneCall, Map, ShoppingCart, Truck, Building2, Boxes, ArrowLeftRight,
   Factory, Cpu, LifeBuoy, Wallet, ListChecks, Settings, PanelRightClose, PanelRightOpen, LogOut, Search, Bell, Warehouse,
   Plus, ChevronLeft, ChevronRight, AlertTriangle, AlertOctagon, Info, CornerDownLeft, UserPlus, FileText, Wrench, PackagePlus,
-  Route, X, ChevronDown, type LucideIcon,
+  Route, X, ChevronDown, StickyNote, type LucideIcon,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../lib/api';
@@ -39,7 +39,7 @@ const SECTIONS: NavSection[] = [
       { to: '/crm/followups', label: 'پیگیری‌ها', tab: 'پیگیری', icon: PhoneCall, badge: 'followups', hint: 'صف تماس‌های امروز' },
       { to: '/crm/map', label: 'نقشه عملیات', short: 'نقشه', icon: Map, hint: 'پراکندگی مشتریان' },
     ],
-    create: [['سرنخ / مخاطب', '/crm/contacts?new=1', UserPlus]],
+    create: [['مشتری / مخاطب', '/crm/contacts?new=1', UserPlus]],
   },
   {
     id: 'supply', label: 'سفارش و تأمین', tab: 'سفارش‌ها', icon: ShoppingCart,
@@ -67,10 +67,11 @@ const SECTIONS: NavSection[] = [
     items: [
       { to: '/service/tickets', label: 'خدمات پس از فروش', short: 'تیکت‌ها', icon: LifeBuoy, badge: 'service', hint: 'نصب، گارانتی، تعمیر' },
       { to: '/finance', label: 'مالی و هزینه‌ها', short: 'مالی', icon: Wallet, hint: 'وصولی و مطالبات' },
-      { to: '/tasks', label: 'کارهای من', short: 'کارها', icon: ListChecks, hint: 'کارهای داخلی تیم' },
-      { to: '/settings', label: 'تنظیمات', icon: Settings, hint: 'کاربران و پیکربندی' },
+      { to: '/tasks', label: 'کارهای من', short: 'کارها', icon: ListChecks, badge: 'tasks', hint: 'کارهای داخلی تیم' },
+      { to: '/notes', label: 'یادداشت‌ها', tab: 'یادداشت', icon: StickyNote, hint: 'یادداشت‌های شخصی و تیمی' },
+      { to: '/settings', label: 'تنظیمات', icon: Settings, hint: 'کاربران، پشتیبان و پیکربندی' },
     ],
-    create: [['تیکت پشتیبانی', '/service/tickets?new=1', Wrench]],
+    create: [['تیکت پشتیبانی', '/service/tickets?new=1', Wrench], ['یادداشت', '/notes?new=1', StickyNote]],
   },
 ];
 
@@ -102,12 +103,19 @@ function useAlerts() {
 function useNavBadges() {
   const { data: followups = [] } = useQuery({ queryKey: ['/followups'], queryFn: () => api<any[]>('/followups') });
   const { data: alerts = [] } = useAlerts();
+  const { data: tasks = [] } = useQuery({ queryKey: ['/tasks'], queryFn: () => api<any[]>('/tasks') });
+  const { me } = useSession();
   return useMemo(() => {
     const endToday = new Date(); endToday.setHours(23, 59, 59, 999);
-    const out: Record<string, number> = { followups: followups.filter((f) => f.dueAt <= endToday.getTime()).length };
+    const out: Record<string, number> = {
+      followups: followups.filter((f) => f.dueAt <= endToday.getTime()).length,
+      // Open tasks waiting on me: overdue, due today, urgent, or handed to me by a colleague.
+      tasks: tasks.filter((t) => t.assigneeId === me.id && t.status !== 'done'
+        && ((t.dueAt && t.dueAt <= endToday.getTime()) || ['urgent', 'high'].includes(t.priority) || (t.createdBy && t.createdBy !== me.id))).length,
+    };
     for (const a of alerts) if (a.severity !== 'info') out[a.module] = (out[a.module] ?? 0) + 1;
     return out;
-  }, [followups, alerts]);
+  }, [followups, alerts, tasks, me.id]);
 }
 
 function Badge({ value, className }: { value?: number; className?: string }) {
@@ -645,6 +653,29 @@ function MobileTabBar({ onSection }: { onSection: (s: NavSection) => void }) {
   );
 }
 
+/** Desktop: back arrow + breadcrumb (section › list) whenever a single record is open. */
+function DesktopBack() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const here = locate(location.pathname);
+  if (!here.detail) return null;
+  const back = () => {
+    if ((window.history.state?.idx ?? 0) > 0) navigate(-1);
+    else navigate(here.item.to);
+  };
+  return (
+    <div className="flex shrink-0 items-center gap-2">
+      <button onClick={back} className="icon-btn" aria-label="بازگشت" title="بازگشت"><ChevronRight size={18} /></button>
+      <nav className="flex items-center gap-1.5 text-sm" aria-label="مسیر">
+        <span className="text-mist">{here.section.label}</span>
+        <ChevronLeft size={14} className="text-mist/60" />
+        <NavLink to={here.item.to} className="font-semibold text-frost hover:text-iris">{here.item.label}</NavLink>
+      </nav>
+      <span className="mx-1 h-6 w-px bg-line" />
+    </div>
+  );
+}
+
 /* ───────────────────────── Shell ───────────────────────── */
 
 export function Shell({ children }: { children?: ReactNode }) {
@@ -686,6 +717,7 @@ export function Shell({ children }: { children?: ReactNode }) {
             <MobileTopBar onSearch={() => setPalette(true)} onMenu={() => setMenu(true)} onSection={setSectionSheet} compact={compact} />
           ) : (
             <div className="flex h-16 items-center gap-3 px-5">
+              <DesktopBack />
               <button
                 onClick={() => setPalette(true)}
                 className="flex h-9 w-full max-w-md items-center gap-2.5 rounded-xl border border-line/70 bg-deep/50 px-3 text-sm text-mist transition hover:border-mist"

@@ -1,16 +1,26 @@
 import { Router } from 'express';
 import { insert, normalizeSearch, one, q, run, uid, update, val } from '../db.ts';
-import { DAY, HttpError, bulkDelete, getSettings, guard, h, mustFind, orderStagesFor } from '../core.ts';
+import { DAY, HttpError, bulkDelete, getSettings, guard, h, mustFind, orderStagesFor, guardRouter } from '../core.ts';
 import { toJalali, fromJalali, JALALI_MONTHS } from '../../../shared/jalali.ts';
 
 /* ═════════════════════════ Tasks ═════════════════════════ */
 
 export const tasksRouter = Router();
-tasksRouter.use(guard('tasks'));
+guardRouter(tasksRouter, 'tasks');
 
 tasksRouter.get('/tasks', h((req) => q(
-  `SELECT t.*, u.full_name AS assignee_name FROM tasks t LEFT JOIN users u ON u.id = t.assignee_id
-   WHERE t.org_id = ? ORDER BY CASE t.status WHEN 'done' THEN 1 ELSE 0 END, COALESCE(t.due_at, 9e15)`, req.user.orgId,
+  `SELECT t.*, u.full_name AS assignee_name, cb.full_name AS created_by_name,
+     CASE t.ref_type
+       WHEN 'contact' THEN (SELECT name FROM contacts WHERE id = t.ref_id)
+       WHEN 'order' THEN (SELECT number FROM orders WHERE id = t.ref_id)
+       WHEN 'po' THEN (SELECT number FROM purchase_orders WHERE id = t.ref_id)
+       WHEN 'work_order' THEN (SELECT number FROM work_orders WHERE id = t.ref_id)
+       WHEN 'ticket' THEN (SELECT number || ' — ' || subject FROM tickets WHERE id = t.ref_id)
+     END AS ref_label
+   FROM tasks t LEFT JOIN users u ON u.id = t.assignee_id LEFT JOIN users cb ON cb.id = t.created_by
+   WHERE t.org_id = ?
+   ORDER BY CASE t.status WHEN 'done' THEN 1 ELSE 0 END,
+     CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END, COALESCE(t.due_at, 9e15)`, req.user.orgId,
 )));
 
 const TASK_COLUMNS = ['title', 'description', 'assignee_id', 'due_at', 'status', 'priority', 'ref_type', 'ref_id'];
@@ -43,7 +53,7 @@ tasksRouter.post('/tasks/bulk-delete', h((req) => bulkDelete(req.user, req.body?
 /* ═════════════════════════ Finance ═════════════════════════ */
 
 export const financeRouter = Router();
-financeRouter.use(guard('finance'));
+guardRouter(financeRouter, 'finance');
 
 const EXPENSE_COLUMNS = ['category', 'amount', 'at', 'description', 'payee', 'ref_type', 'ref_id'];
 
@@ -73,7 +83,7 @@ financeRouter.delete('/expenses/:id', h((req) => {
 financeRouter.post('/expenses/bulk-delete', h((req) => bulkDelete(req.user, req.body?.ids, {
   table: 'expenses', entity: 'expense', noun: 'هزینه',
   label: (e) => `${e.category} — ${e.description || e.payee || ''}`,
-  check: (e) => (e.refType ? 'از سفارش خرید/فروش ثبت شده و به آن سند تعلق دارد' : null),
+  block: (e) => (e.refType ? 'از سفارش خرید/فروش ثبت شده و با همان سند مدیریت می‌شود' : null),
   remove: (e) => run('DELETE FROM expenses WHERE id = ?', e.id),
 })));
 
@@ -94,7 +104,7 @@ function monthlySeries(orgId: string, months = 6) {
       label,
       revenue: val<number>('SELECT COALESCE(SUM(amount),0) FROM payments WHERE org_id = ? AND paid_at >= ? AND paid_at < ?', orgId, start, end),
       expenses: val<number>('SELECT COALESCE(SUM(amount),0) FROM expenses WHERE org_id = ? AND at >= ? AND at < ?', orgId, start, end),
-      booked: val<number>("SELECT COALESCE(SUM(total),0) FROM orders WHERE org_id = ? AND status != 'cancelled' AND stage != 'quote' AND created_at >= ? AND created_at < ?", orgId, start, end),
+      booked: val<number>("SELECT COALESCE(SUM(total),0) FROM orders WHERE org_id = ? AND deleted_at IS NULL AND status != 'cancelled' AND stage != 'quote' AND created_at >= ? AND created_at < ?", orgId, start, end),
     };
   });
 }
@@ -104,7 +114,7 @@ financeRouter.get('/finance/summary', h((req) => {
   const monthStart = jalaliMonthStart(0).start;
   const receivables = q(
     `SELECT o.id, o.number, o.total, o.paid, o.stage, o.status, c.name AS contact_name, o.created_at
-     FROM orders o JOIN contacts c ON c.id = o.contact_id
+     FROM orders o JOIN contacts c ON c.id = o.contact_id AND o.deleted_at IS NULL
      WHERE o.org_id = ? AND o.status != 'cancelled' AND o.stage != 'quote' AND o.total > o.paid ORDER BY (o.total - o.paid) DESC`, orgId,
   );
   // Gross margin per closed/open order: line revenue vs. current item cost.
@@ -151,7 +161,7 @@ function buildAlerts(orgId: string) {
   const alerts: { id: string; severity: 'critical' | 'warning' | 'info'; module: string; title: string; detail: string; link: string }[] = [];
 
   for (const o of q(
-    `SELECT o.*, c.name AS contact_name FROM orders o JOIN contacts c ON c.id = o.contact_id
+    `SELECT o.*, c.name AS contact_name FROM orders o JOIN contacts c ON c.id = o.contact_id AND o.deleted_at IS NULL
      WHERE o.org_id = ? AND o.status = 'open'`, orgId,
   )) {
     const stage = orderStagesFor(orgId, o.fulfillment, !!o.needsInstallation).find((st) => st.key === o.stage);
@@ -163,7 +173,7 @@ function buildAlerts(orgId: string) {
     }
   }
   for (const p of q(
-    `SELECT p.*, s.name AS supplier_name FROM purchase_orders p JOIN suppliers s ON s.id = p.supplier_id
+    `SELECT p.*, s.name AS supplier_name FROM purchase_orders p JOIN suppliers s ON s.id = p.supplier_id AND p.deleted_at IS NULL
      WHERE p.org_id = ? AND p.status IN ('sent','confirmed','in_transit','partial') AND p.expected_at < ?`, orgId, now,
   )) {
     alerts.push({ id: `po-${p.id}`, severity: 'warning', module: 'scm', title: `تأخیر در خرید ${p.number}`, detail: `${p.supplierName} — ${Math.round((now - p.expectedAt) / DAY)} روز تأخیر`, link: `/scm/purchase-orders/${p.id}` });
@@ -173,20 +183,20 @@ function buildAlerts(orgId: string) {
        COALESCE((SELECT SUM(qty - reserved) FROM stock WHERE item_id = i.id),0) AS free,
        COALESCE((SELECT SUM(l.qty - l.received_qty) FROM po_lines l JOIN purchase_orders p ON p.id = l.po_id
                  WHERE l.item_id = i.id AND p.status IN ('sent','confirmed','in_transit','partial')),0) AS incoming
-     FROM items i WHERE i.org_id = ? AND i.active = 1 AND i.kind != 'service' AND i.reorder_point > 0`, orgId,
+     FROM items i WHERE i.org_id = ? AND i.deleted_at IS NULL AND i.active = 1 AND i.kind != 'service' AND i.reorder_point > 0`, orgId,
   ).filter((i) => i.free + i.incoming <= i.reorderPoint)) {
     alerts.push({ id: `st-${i.id}`, severity: i.free <= 0 ? 'critical' : 'warning', module: 'inventory', title: `موجودی ${i.name} زیر نقطه سفارش`, detail: `آزاد: ${i.free} — نقطه سفارش: ${i.reorderPoint}`, link: `/inventory/items/${i.id}` });
   }
   for (const t of q(
     `SELECT t.*, c.name AS contact_name FROM tickets t LEFT JOIN contacts c ON c.id = t.contact_id
-     WHERE t.org_id = ? AND t.status NOT IN ('resolved','closed') AND t.sla_due_at < ?`, orgId, now,
+     WHERE t.org_id = ? AND t.deleted_at IS NULL AND t.status NOT IN ('resolved','closed') AND t.sla_due_at < ?`, orgId, now,
   )) {
     alerts.push({ id: `tk-${t.id}`, severity: 'critical', module: 'service', title: `SLA تیکت ${t.number} نقض شده`, detail: `${t.subject} — ${t.contactName ?? ''}`, link: `/service/tickets/${t.id}` });
   }
   const overdue = val<number>("SELECT COUNT(*) FROM followups WHERE org_id = ? AND status = 'pending' AND due_at < ?", orgId, now - 3_600_000);
   if (overdue) alerts.push({ id: 'fu', severity: 'warning', module: 'crm', title: `${overdue} پیگیری عقب‌افتاده`, detail: 'سرنخ‌ها منتظر تماس شما هستند', link: '/crm/followups' });
   const untouched = val<number>(
-    "SELECT COUNT(*) FROM contacts WHERE org_id = ? AND last_contact_at IS NULL AND stage NOT IN ('customer','lost') AND created_at < ?",
+    "SELECT COUNT(*) FROM contacts WHERE org_id = ? AND deleted_at IS NULL AND last_contact_at IS NULL AND stage NOT IN ('customer','lost') AND created_at < ?",
     orgId, now - s.scoring.firstTouchHours * 3_600_000,
   );
   if (untouched) alerts.push({ id: 'ut', severity: 'warning', module: 'crm', title: `${untouched} سرنخ بدون اولین تماس`, detail: `بیش از ${s.scoring.firstTouchHours} ساعت از ثبت گذشته`, link: '/crm/contacts?untouched=1' });
@@ -197,7 +207,7 @@ function buildAlerts(orgId: string) {
     alerts.push({ id: `wo-${w.id}`, severity: 'warning', module: 'production', title: `دستور تولید ${w.number} از موعد گذشته`, detail: `${w.qty} عدد ${w.itemName}`, link: `/production/work-orders/${w.id}` });
   }
   const expiring = val<number>(
-    "SELECT COUNT(*) FROM units WHERE org_id = ? AND status = 'installed' AND warranty_until BETWEEN ? AND ?", orgId, now, now + 30 * DAY,
+    "SELECT COUNT(*) FROM units WHERE org_id = ? AND deleted_at IS NULL AND status = 'installed' AND warranty_until BETWEEN ? AND ?", orgId, now, now + 30 * DAY,
   );
   if (expiring) alerts.push({ id: 'wr', severity: 'info', module: 'service', title: `گارانتی ${expiring} دستگاه در ۳۰ روز آینده تمام می‌شود`, detail: 'فرصت فروش تمدید گارانتی / سرویس دوره‌ای', link: '/units?warranty=expiring' });
   const order = { critical: 0, warning: 1, info: 2 };
@@ -214,37 +224,37 @@ insightsRouter.get('/dashboard', h((req) => {
   const endToday = startToday.getTime() + DAY;
   const monthStart = jalaliMonthStart(0).start;
 
-  const openOrders = q("SELECT * FROM orders WHERE org_id = ? AND status = 'open'", orgId);
+  const openOrders = q("SELECT * FROM orders WHERE org_id = ? AND deleted_at IS NULL AND status = 'open'", orgId);
   const funnel = s.lifecycleStages.map((st) => ({
-    ...st, count: val<number>('SELECT COUNT(*) FROM contacts WHERE org_id = ? AND stage = ?', orgId, st.key),
+    ...st, count: val<number>('SELECT COUNT(*) FROM contacts WHERE org_id = ? AND deleted_at IS NULL AND stage = ?', orgId, st.key),
   }));
   const pipelineStages = s.orderStages.map((st) => ({
     ...st,
     count: openOrders.filter((o) => o.stage === st.key).length,
     value: openOrders.filter((o) => o.stage === st.key).reduce((sum, o) => sum + o.total, 0),
   }));
-  const unitsByStatus = q('SELECT status, COUNT(*) AS n FROM units WHERE org_id = ? GROUP BY status', orgId);
+  const unitsByStatus = q('SELECT status, COUNT(*) AS n FROM units WHERE org_id = ? AND deleted_at IS NULL GROUP BY status', orgId);
 
   return {
     kpis: {
       revenueMonth: val<number>('SELECT COALESCE(SUM(amount),0) FROM payments WHERE org_id = ? AND paid_at >= ?', orgId, monthStart),
-      bookedMonth: val<number>("SELECT COALESCE(SUM(total),0) FROM orders WHERE org_id = ? AND status != 'cancelled' AND stage != 'quote' AND created_at >= ?", orgId, monthStart),
+      bookedMonth: val<number>("SELECT COALESCE(SUM(total),0) FROM orders WHERE org_id = ? AND deleted_at IS NULL AND status != 'cancelled' AND stage != 'quote' AND created_at >= ?", orgId, monthStart),
       openOrders: openOrders.length,
       openOrdersValue: openOrders.reduce((sum, o) => sum + o.total, 0),
       quotes: openOrders.filter((o) => o.stage === 'quote').length,
       receivable: openOrders.reduce((sum, o) => sum + Math.max(0, o.total - o.paid), 0)
-        + val<number>("SELECT COALESCE(SUM(total - paid),0) FROM orders WHERE org_id = ? AND status = 'done' AND total > paid", orgId),
-      hotLeads: val<number>("SELECT COUNT(*) FROM contacts WHERE org_id = ? AND score >= ? AND stage NOT IN ('customer','lost')", orgId, s.scoring.hotThreshold),
-      warmLeads: val<number>("SELECT COUNT(*) FROM contacts WHERE org_id = ? AND score >= ? AND score < ? AND stage NOT IN ('customer','lost')", orgId, s.scoring.warmThreshold, s.scoring.hotThreshold),
-      newLeadsMonth: val<number>('SELECT COUNT(*) FROM contacts WHERE org_id = ? AND created_at >= ?', orgId, monthStart),
-      conversionsMonth: val<number>("SELECT COUNT(*) FROM contacts WHERE org_id = ? AND stage = 'customer' AND converted_at >= ?", orgId, monthStart),
+        + val<number>("SELECT COALESCE(SUM(total - paid),0) FROM orders WHERE org_id = ? AND deleted_at IS NULL AND status = 'done' AND total > paid", orgId),
+      hotLeads: val<number>("SELECT COUNT(*) FROM contacts WHERE org_id = ? AND deleted_at IS NULL AND score >= ? AND stage NOT IN ('customer','lost')", orgId, s.scoring.hotThreshold),
+      warmLeads: val<number>("SELECT COUNT(*) FROM contacts WHERE org_id = ? AND deleted_at IS NULL AND score >= ? AND score < ? AND stage NOT IN ('customer','lost')", orgId, s.scoring.warmThreshold, s.scoring.hotThreshold),
+      newLeadsMonth: val<number>('SELECT COUNT(*) FROM contacts WHERE org_id = ? AND deleted_at IS NULL AND created_at >= ?', orgId, monthStart),
+      conversionsMonth: val<number>("SELECT COUNT(*) FROM contacts WHERE org_id = ? AND deleted_at IS NULL AND stage = 'customer' AND converted_at >= ?", orgId, monthStart),
       wip: val<number>("SELECT COALESCE(SUM(qty),0) FROM work_orders WHERE org_id = ? AND status = 'open'", orgId),
-      readyStock: val<number>("SELECT COUNT(*) FROM units WHERE org_id = ? AND status = 'in_stock'", orgId),
-      installedBase: val<number>("SELECT COUNT(*) FROM units WHERE org_id = ? AND status IN ('installed','in_repair')", orgId),
-      openTickets: val<number>("SELECT COUNT(*) FROM tickets WHERE org_id = ? AND status NOT IN ('resolved','closed')", orgId),
-      csat: val<number | null>('SELECT ROUND(AVG(satisfaction), 1) FROM tickets WHERE org_id = ? AND satisfaction IS NOT NULL', orgId),
+      readyStock: val<number>("SELECT COUNT(*) FROM units WHERE org_id = ? AND deleted_at IS NULL AND status = 'in_stock'", orgId),
+      installedBase: val<number>("SELECT COUNT(*) FROM units WHERE org_id = ? AND deleted_at IS NULL AND status IN ('installed','in_repair')", orgId),
+      openTickets: val<number>("SELECT COUNT(*) FROM tickets WHERE org_id = ? AND deleted_at IS NULL AND status NOT IN ('resolved','closed')", orgId),
+      csat: val<number | null>('SELECT ROUND(AVG(satisfaction), 1) FROM tickets WHERE org_id = ? AND deleted_at IS NULL AND satisfaction IS NOT NULL', orgId),
       lateOrders: openOrders.filter((o) => o.promisedAt && o.promisedAt < now).length,
-      delayedPos: val<number>("SELECT COUNT(*) FROM purchase_orders WHERE org_id = ? AND status IN ('sent','confirmed','in_transit','partial') AND expected_at < ?", orgId, now),
+      delayedPos: val<number>("SELECT COUNT(*) FROM purchase_orders WHERE org_id = ? AND deleted_at IS NULL AND status IN ('sent','confirmed','in_transit','partial') AND expected_at < ?", orgId, now),
     },
     funnel,
     pipelineStages,
@@ -258,11 +268,11 @@ insightsRouter.get('/dashboard', h((req) => {
       ),
       installations: q(
         `SELECT t.*, c.name AS contact_name FROM tickets t LEFT JOIN contacts c ON c.id = t.contact_id
-         WHERE t.org_id = ? AND t.status NOT IN ('resolved','closed') AND t.scheduled_at BETWEEN ? AND ? ORDER BY t.scheduled_at LIMIT 6`,
+         WHERE t.org_id = ? AND t.deleted_at IS NULL AND t.status NOT IN ('resolved','closed') AND t.scheduled_at BETWEEN ? AND ? ORDER BY t.scheduled_at LIMIT 6`,
         orgId, startToday.getTime(), startToday.getTime() + 7 * DAY,
       ),
       deliveries: q(
-        `SELECT p.id, p.number, p.expected_at, s.name AS supplier_name FROM purchase_orders p JOIN suppliers s ON s.id = p.supplier_id
+        `SELECT p.id, p.number, p.expected_at, s.name AS supplier_name FROM purchase_orders p JOIN suppliers s ON s.id = p.supplier_id AND p.deleted_at IS NULL
          WHERE p.org_id = ? AND p.status IN ('sent','confirmed','in_transit','partial') AND p.expected_at < ? ORDER BY p.expected_at LIMIT 6`,
         orgId, now + 7 * DAY,
       ),
@@ -286,36 +296,46 @@ insightsRouter.get('/search', h((req) => {
   const normalized = normalizeSearch(raw);
   if (normalized.length < 2) return [];
   const orgId = req.user.orgId;
-  const like = `%${raw}%`;
-  const norm = `%${normalized}%`;
+  // Every word must match somewhere (any order), like the list filters in the app.
+  const words = normalized.split(' ').filter(Boolean).slice(0, 5);
+  const likeRaw = `%${raw}%`;
+  const all = (expr: string) => ({ sql: words.map(() => `normalize_search(${expr}) LIKE ?`).join(' AND '), params: words.map((w) => `%${w}%`) });
   const results: { type: string; id: string; title: string; subtitle: string; link: string }[] = [];
-  for (const c of q('SELECT id, name, company, stage FROM contacts WHERE org_id = ? AND normalize_search(search) LIKE ? LIMIT 6', orgId, norm)) {
-    results.push({ type: 'contact', id: c.id, title: c.name, subtitle: c.company || 'مخاطب', link: `/crm/contacts/${c.id}` });
+
+  const c = all("COALESCE(c.search, '') || ' ' || c.name || ' ' || COALESCE(c.company, '') || ' ' || COALESCE(c.phones_json, '') || ' ' || COALESCE((SELECT GROUP_CONCAT(p.name || ' ' || p.phones_json, ' ') FROM contact_people p WHERE p.contact_id = c.id), '')");
+  for (const r of q(`SELECT c.id, c.name, c.company FROM contacts c WHERE c.org_id = ? AND c.deleted_at IS NULL AND ${c.sql} LIMIT 8`, orgId, ...c.params)) {
+    results.push({ type: 'contact', id: r.id, title: r.name, subtitle: r.company || 'مخاطب', link: `/crm/contacts/${r.id}` });
   }
-  for (const u of q(
-    `SELECT u.id, u.serial, i.name, c.name AS contact_name FROM units u JOIN items i ON i.id = u.item_id
-     LEFT JOIN contacts c ON c.id = u.contact_id WHERE u.org_id = ? AND
-     (u.serial LIKE ? OR normalize_search(i.name) LIKE ? OR normalize_search(COALESCE(c.name, '')) LIKE ?) LIMIT 6`, orgId, like, norm, norm,
-  )) results.push({ type: 'unit', id: u.id, title: u.serial, subtitle: `${u.name}${u.contactName ? ` — ${u.contactName}` : ''}`, link: `/units/${u.serial}` });
-  for (const o of q(
+  const u = all("COALESCE(u.serial, '') || ' ' || i.name || ' ' || i.sku || ' ' || COALESCE(c.name, '')");
+  for (const r of q(
+    `SELECT u.id, u.serial, u.serial_unknown, i.name, c.name AS contact_name FROM units u JOIN items i ON i.id = u.item_id
+     LEFT JOIN contacts c ON c.id = u.contact_id WHERE u.org_id = ? AND u.deleted_at IS NULL AND ${u.sql} LIMIT 6`, orgId, ...u.params,
+  )) results.push({ type: 'unit', id: r.id, title: r.serialUnknown ? 'دستگاه بدون سریال' : r.serial, subtitle: `${r.name}${r.contactName ? ` — ${r.contactName}` : ''}`, link: `/units/${r.id}` });
+  const o = all("o.number || ' ' || c.name || ' ' || COALESCE((SELECT GROUP_CONCAT(i.name, ' ') FROM order_lines l JOIN items i ON i.id = l.item_id WHERE l.order_id = o.id), '')");
+  for (const r of q(
     `SELECT o.id, o.number, c.name FROM orders o JOIN contacts c ON c.id = o.contact_id
-     WHERE o.org_id = ? AND (o.number LIKE ? OR normalize_search(c.name) LIKE ? OR normalize_search(COALESCE(o.summary, '')) LIKE ?) LIMIT 5`, orgId, like, norm, norm,
-  )) results.push({ type: 'order', id: o.id, title: o.number, subtitle: o.name, link: `/sales/orders/${o.id}` });
-  for (const p of q(
+     WHERE o.org_id = ? AND o.deleted_at IS NULL AND ${o.sql} LIMIT 6`, orgId, ...o.params,
+  )) results.push({ type: 'order', id: r.id, title: r.number, subtitle: r.name, link: `/sales/orders/${r.id}` });
+  const p = all("p.number || ' ' || COALESCE(p.tracking_no, '') || ' ' || s.name");
+  for (const r of q(
     `SELECT p.id, p.number, s.name FROM purchase_orders p JOIN suppliers s ON s.id = p.supplier_id
-     WHERE p.org_id = ? AND (p.number LIKE ? OR p.tracking_no LIKE ? OR normalize_search(s.name) LIKE ?) LIMIT 5`, orgId, like, like, norm,
-  )) results.push({ type: 'po', id: p.id, title: p.number, subtitle: p.name, link: `/scm/purchase-orders/${p.id}` });
-  for (const w of q('SELECT id, number FROM work_orders WHERE org_id = ? AND number LIKE ? LIMIT 4', orgId, like)) {
-    results.push({ type: 'work_order', id: w.id, title: w.number, subtitle: 'دستور تولید', link: `/production/work-orders/${w.id}` });
+     WHERE p.org_id = ? AND p.deleted_at IS NULL AND ${p.sql} LIMIT 5`, orgId, ...p.params,
+  )) results.push({ type: 'po', id: r.id, title: r.number, subtitle: r.name, link: `/scm/purchase-orders/${r.id}` });
+  for (const r of q('SELECT id, number FROM work_orders WHERE org_id = ? AND number LIKE ? LIMIT 4', orgId, likeRaw)) {
+    results.push({ type: 'work_order', id: r.id, title: r.number, subtitle: 'دستور تولید', link: `/production/work-orders/${r.id}` });
   }
-  for (const t of q('SELECT id, number, subject FROM tickets WHERE org_id = ? AND (number LIKE ? OR normalize_search(subject) LIKE ?) LIMIT 5', orgId, like, norm)) {
-    results.push({ type: 'ticket', id: t.id, title: t.number, subtitle: t.subject, link: `/service/tickets/${t.id}` });
+  const t = all("t.number || ' ' || t.subject || ' ' || COALESCE(c.name, '')");
+  for (const r of q(
+    `SELECT t.id, t.number, t.subject FROM tickets t LEFT JOIN contacts c ON c.id = t.contact_id
+     WHERE t.org_id = ? AND t.deleted_at IS NULL AND ${t.sql} LIMIT 5`, orgId, ...t.params,
+  )) results.push({ type: 'ticket', id: r.id, title: r.number, subtitle: r.subject, link: `/service/tickets/${r.id}` });
+  const it = all("i.sku || ' ' || i.name || ' ' || COALESCE(i.category, '')");
+  for (const r of q(`SELECT i.id, i.sku, i.name FROM items i WHERE i.org_id = ? AND i.deleted_at IS NULL AND ${it.sql} LIMIT 6`, orgId, ...it.params)) {
+    results.push({ type: 'item', id: r.id, title: r.name, subtitle: r.sku, link: `/inventory/items/${r.id}` });
   }
-  for (const i of q('SELECT id, sku, name FROM items WHERE org_id = ? AND (sku LIKE ? OR normalize_search(name) LIKE ?) LIMIT 5', orgId, like, norm)) {
-    results.push({ type: 'item', id: i.id, title: i.name, subtitle: i.sku, link: `/inventory/items/${i.id}` });
-  }
-  for (const s of q("SELECT id, name, city FROM suppliers WHERE org_id = ? AND (normalize_search(name) LIKE ? OR normalize_search(COALESCE(city, '')) LIKE ?) LIMIT 4", orgId, norm, norm)) {
-    results.push({ type: 'supplier', id: s.id, title: s.name, subtitle: s.city || 'تأمین‌کننده', link: `/scm/suppliers?focus=${s.id}` });
+  const sp = all("s.name || ' ' || COALESCE(s.city, '') || ' ' || COALESCE(s.contact_person, '') || ' ' || COALESCE(s.phone, '') || ' ' || COALESCE(s.categories, '')");
+  for (const r of q(`SELECT s.id, s.name, s.city FROM suppliers s WHERE s.org_id = ? AND s.deleted_at IS NULL AND ${sp.sql} LIMIT 5`, orgId, ...sp.params)) {
+    results.push({ type: 'supplier', id: r.id, title: r.name, subtitle: r.city || 'تأمین‌کننده', link: `/scm/suppliers?focus=${r.id}` });
   }
   return results;
 }));

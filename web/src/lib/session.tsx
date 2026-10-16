@@ -2,10 +2,10 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, getToken, setToken } from './api';
 import {
-  canWrite, type Module, type OptionDef, type Role, type StageDef, type WorkspaceSettings,
+  canWrite, isAdminRole, type Module, type OptionDef, type Role, type StageDef, type WorkspaceSettings,
 } from '@shared/defaults';
 
-export interface User { id: string; username: string; fullName: string; role: Role; phone?: string; active?: number }
+export interface User { id: string; username: string; fullName: string; role: Role; roles: Role[]; phone?: string; active?: number }
 export interface Tag { id: string; name: string; color: string }
 export interface Warehouse { id: string; code: string; name: string; kind: string; address?: string }
 
@@ -20,6 +20,9 @@ interface Meta {
 
 interface Session extends Meta {
   can: (module: Module) => boolean;
+  /** Owner or admin (any of the user's roles). */
+  isAdmin: boolean;
+  isOwner: boolean;
   userName: (id?: string | null) => string;
   lifecycle: (key?: string | null) => StageDef | undefined;
   option: (list: OptionDef[], key?: string | null) => OptionDef | undefined;
@@ -61,7 +64,9 @@ export function SessionProvider({ children, fallback }: { children: ReactNode; f
     const users = Object.fromEntries(data.users.map((u) => [u.id, u]));
     return {
       ...data,
-      can: (module) => canWrite(data.me.role, module),
+      can: (module) => canWrite(data.me.roles ?? data.me.role, module),
+      isAdmin: isAdminRole(data.me.roles ?? data.me.role),
+      isOwner: (data.me.roles ?? [data.me.role]).includes('owner'),
       userName: (id) => (id && users[id]?.fullName) || '—',
       lifecycle: (key) => data.settings.lifecycleStages.find((s) => s.key === key),
       option: (list, key) => list.find((o) => o.key === key),

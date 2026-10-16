@@ -69,7 +69,7 @@ export default function PipelinePage() {
             {users.map((u) => <option key={u.id} value={u.id}>{u.fullName}</option>)}
           </Select>
         </div>}
-        fab={{ label: 'سرنخ جدید', icon: UserPlus, onClick: () => setCreating(true) }}
+        fab={{ label: 'مشتری جدید', icon: UserPlus, onClick: () => setCreating(true) }}
       />
       <div className="mb-3 flex items-center gap-2 md:hidden">
         <SearchBox value={search} onChange={setSearch} className="min-w-0 flex-1" placeholder="نام یا شرکت…" />

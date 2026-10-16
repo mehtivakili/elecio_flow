@@ -66,7 +66,7 @@ export default function ContactsPage() {
         subtitle={`${num(contacts.length)} مخاطب — سرنخ‌ها، مشتریان و نمایندگان`}
         aside={<SelectButton sel={sel} onStart={() => setView('table')} />}
         actions={<Button variant="ghost" icon={Download} onClick={exportCsv} className="hidden md:inline-flex">خروجی CSV</Button>}
-        fab={sel.active ? undefined : { label: 'سرنخ جدید', icon: UserPlus, onClick: () => setCreating(true) }}
+        fab={sel.active ? undefined : { label: 'مشتری جدید', icon: UserPlus, onClick: () => setCreating(true) }}
       />
 
       <Card pad={false} bodyClass="p-0 md:p-4" className="mb-4 border-0 bg-transparent shadow-none backdrop-blur-none md:mb-5 md:border md:bg-ink/[0.045] md:shadow-glass md:backdrop-blur-md">
@@ -109,7 +109,7 @@ export default function ContactsPage() {
       </Card>
 
       {isLoading ? <Spinner /> : contacts.length === 0 ? (
-        <Card><Empty icon={Users} title="مخاطبی یافت نشد" hint="فیلترها را تغییر دهید یا اولین سرنخ را ثبت کنید." action={<Button variant="action" icon={UserPlus} onClick={() => setCreating(true)}>سرنخ جدید</Button>} /></Card>
+        <Card><Empty icon={Users} title="مخاطبی یافت نشد" hint="فیلترها را تغییر دهید یا اولین مشتری را ثبت کنید." action={<Button variant="action" icon={UserPlus} onClick={() => setCreating(true)}>مشتری جدید</Button>} /></Card>
       ) : <>
       <div className="space-y-2 md:hidden">
         <div className="px-1 text-xs text-mist">{num(contacts.length)} مخاطب</div>

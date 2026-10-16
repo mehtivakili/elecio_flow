@@ -15,6 +15,7 @@ import OrderPage from './pages/sales/OrderPage';
 import PurchaseOrdersPage from './pages/scm/PurchaseOrdersPage';
 import PurchaseOrderPage from './pages/scm/PurchaseOrderPage';
 import SuppliersPage from './pages/scm/SuppliersPage';
+import SupplierPage from './pages/scm/SupplierPage';
 import ItemsPage from './pages/inventory/ItemsPage';
 import ItemPage from './pages/inventory/ItemPage';
 import StockPage, { StockMovesPage } from './pages/inventory/StockPage';
@@ -28,6 +29,7 @@ import FinancePage from './pages/FinancePage';
 import TasksPage from './pages/TasksPage';
 import SettingsPage from './pages/SettingsPage';
 import ProductFlowPage from './pages/ProductFlowPage';
+import NotesPage from './pages/NotesPage';
 
 export default function App() {
   const { token } = useAuth();
@@ -49,6 +51,7 @@ export default function App() {
           <Route path="scm/purchase-orders" element={<PurchaseOrdersPage />} />
           <Route path="scm/purchase-orders/:id" element={<PurchaseOrderPage />} />
           <Route path="scm/suppliers" element={<SuppliersPage />} />
+          <Route path="scm/suppliers/:id" element={<SupplierPage />} />
           <Route path="inventory/items" element={<ItemsPage />} />
           <Route path="inventory/items/:id" element={<ItemPage />} />
           <Route path="inventory/stock" element={<StockPage />} />
@@ -61,6 +64,7 @@ export default function App() {
           <Route path="service/tickets/:id" element={<TicketPage />} />
           <Route path="finance" element={<FinancePage />} />
           <Route path="tasks" element={<TasksPage />} />
+          <Route path="notes" element={<NotesPage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

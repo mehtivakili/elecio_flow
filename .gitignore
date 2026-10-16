@@ -5,3 +5,7 @@ server/data/
 .env
 /source1_(crm_ideas)
 /source2_(ui_ideas)
+# database backups and SQLite side files
+backups/
+*.db-wal
+*.db-shm

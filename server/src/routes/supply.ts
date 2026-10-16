@@ -1,12 +1,12 @@
 import { Router } from 'express';
-import { insert, one, q, run, tx, uid, update, val } from '../db.ts';
-import { DAY, HttpError, bulkDelete, getSettings, guard, h, logActivity, mustFind, nextNumber, unlinkTasks } from '../core.ts';
+import { insert, one, q, run, tx, uid, update, val, type Row } from '../db.ts';
+import { DAY, HttpError, bulkDelete, getSettings, guard, h, logActivity, mustFind, nextNumber, unlinkTasks, guardRouter } from '../core.ts';
 import { moveStock } from '../services/inventory.ts';
 
 /* ═════════════════════════ Items, BOM, warehouses, stock (WMS) ═════════════════════════ */
 
 export const inventoryRouter = Router();
-inventoryRouter.use(guard('inventory'));
+guardRouter(inventoryRouter, 'inventory');
 
 const ITEM_COLUMNS = [
   'sku', 'name', 'kind', 'category', 'unit', 'price', 'cost', 'serialized', 'warranty_months', 'hw_rev', 'fw_version',
@@ -20,10 +20,10 @@ function itemsWithStock(orgId: string, where = '', ...params: (string | number)[
        COALESCE((SELECT SUM(qty) FROM stock WHERE item_id = i.id), 0) AS on_hand,
        COALESCE((SELECT SUM(reserved) FROM stock WHERE item_id = i.id), 0) AS reserved,
        COALESCE((SELECT SUM(l.qty - l.received_qty) FROM po_lines l JOIN purchase_orders p ON p.id = l.po_id
-                 WHERE l.item_id = i.id AND p.status IN ('sent','confirmed','in_transit','partial')), 0) AS incoming,
+                 WHERE l.item_id = i.id AND p.status IN ('sent','confirmed','in_transit','partial') AND p.deleted_at IS NULL), 0) AS incoming,
        (SELECT COUNT(*) FROM bom_lines WHERE parent_id = i.id) AS bom_count
      FROM items i LEFT JOIN suppliers s ON s.id = i.supplier_id
-     WHERE i.org_id = ? ${where} ORDER BY i.kind DESC, i.name`,
+     WHERE i.org_id = ? AND i.deleted_at IS NULL ${where} ORDER BY i.kind DESC, i.name`,
     orgId, ...params,
   ).map((i) => {
     const free = i.onHand - i.reserved;
@@ -96,17 +96,19 @@ inventoryRouter.put('/items/:id', h((req) => {
 inventoryRouter.post('/items/bulk-delete', h((req) => bulkDelete(req.user, req.body?.ids, {
   table: 'items', entity: 'item', noun: 'کالا',
   label: (i) => `${i.name} (${i.sku})`,
-  check: (i) => {
+  // Items with any history are archived (and deactivated) so old documents still show them.
+  linkedReason: (i) => {
     const used = (sql: string) => val<number>(sql, i.id) > 0;
-    if (used('SELECT COUNT(*) FROM order_lines WHERE item_id = ?')) return 'در سفارش فروش استفاده شده؛ غیرفعالش کنید';
-    if (used('SELECT COUNT(*) FROM po_lines WHERE item_id = ?')) return 'در سفارش خرید استفاده شده؛ غیرفعالش کنید';
-    if (used('SELECT COUNT(*) FROM work_orders WHERE item_id = ?')) return 'دستور تولید دارد؛ غیرفعالش کنید';
-    if (used('SELECT COUNT(*) FROM units WHERE item_id = ?')) return 'دستگاه سریال‌دار دارد؛ غیرفعالش کنید';
-    if (used('SELECT COUNT(*) FROM bom_lines WHERE component_id = ?')) return 'در BOM محصول دیگری به کار رفته';
-    if (used('SELECT COUNT(*) FROM stock_moves WHERE item_id = ?')) return 'در دفتر انبار گردش دارد؛ غیرفعالش کنید';
-    if (used('SELECT COUNT(*) FROM stock WHERE item_id = ? AND (qty <> 0 OR reserved <> 0)')) return 'موجودی انبار دارد';
+    if (used('SELECT COUNT(*) FROM order_lines WHERE item_id = ?')) return 'در سفارش‌های فروش حفظ شد';
+    if (used('SELECT COUNT(*) FROM po_lines WHERE item_id = ?')) return 'در سفارش‌های خرید حفظ شد';
+    if (used('SELECT COUNT(*) FROM work_orders WHERE item_id = ?')) return 'در دستورهای تولید حفظ شد';
+    if (used('SELECT COUNT(*) FROM units WHERE item_id = ?')) return 'دستگاه‌های سریال‌دارش حفظ شد';
+    if (used('SELECT COUNT(*) FROM bom_lines WHERE component_id = ?')) return 'در BOM محصولات دیگر حفظ شد';
+    if (used('SELECT COUNT(*) FROM stock_moves WHERE item_id = ?')) return 'گردش انبارش حفظ شد';
+    if (used('SELECT COUNT(*) FROM stock WHERE item_id = ? AND (qty <> 0 OR reserved <> 0)')) return 'موجودی انبارش حفظ شد';
     return null;
   },
+  beforeArchive: (i) => run('UPDATE items SET active = 0 WHERE id = ?', i.id),
   remove: (i) => run('DELETE FROM items WHERE id = ?', i.id), // its own BOM lines and empty stock rows cascade
 })));
 
@@ -141,7 +143,7 @@ inventoryRouter.put('/warehouses/:id', h((req) => {
 inventoryRouter.get('/stock', h((req) => q(
   `SELECT s.*, i.sku, i.name, i.kind, i.unit, i.cost, i.reorder_point, w.name AS warehouse_name, w.code AS warehouse_code
    FROM stock s JOIN items i ON i.id = s.item_id JOIN warehouses w ON w.id = s.warehouse_id
-   WHERE s.org_id = ? AND (s.qty != 0 OR s.reserved != 0) ORDER BY w.created_at, i.name`, req.user.orgId,
+   WHERE s.org_id = ? AND i.deleted_at IS NULL AND (s.qty != 0 OR s.reserved != 0) ORDER BY w.created_at, i.name`, req.user.orgId,
 )));
 
 /** Set an absolute counted quantity while keeping the difference in the stock ledger. */
@@ -214,12 +216,12 @@ inventoryRouter.post('/moves', h((req) => {
 /* ═════════════════════════ Suppliers & purchase orders (SCM) ═════════════════════════ */
 
 export const supplyRouter = Router();
-supplyRouter.use(guard('scm'));
+guardRouter(supplyRouter, 'scm');
 
 const SUPPLIER_COLUMNS = ['name', 'contact_person', 'phone', 'email', 'country', 'city', 'address', 'categories', 'lead_time_days', 'rating', 'notes'];
 
 /** Supplier scorecard: on-time delivery and average delay, computed from real POs. */
-supplyRouter.get('/suppliers', h((req) => q('SELECT * FROM suppliers WHERE org_id = ? ORDER BY name', req.user.orgId).map((s) => {
+function scorecard(s: Row) {
   const pos = q("SELECT expected_at, received_at, status FROM purchase_orders WHERE supplier_id = ? AND status != 'cancelled'", s.id);
   const received = pos.filter((p) => p.receivedAt && p.expectedAt);
   const onTime = received.filter((p) => p.receivedAt <= p.expectedAt + DAY).length;
@@ -236,8 +238,61 @@ supplyRouter.get('/suppliers', h((req) => q('SELECT * FROM suppliers WHERE org_i
       `SELECT COALESCE(SUM(l.qty * l.unit_cost), 0) FROM po_lines l JOIN purchase_orders p ON p.id = l.po_id
        WHERE p.supplier_id = ? AND p.status != 'cancelled'`, s.id,
     ),
+    lastPurchaseAt: val<number | null>("SELECT MAX(COALESCE(ordered_at, created_at)) FROM purchase_orders WHERE supplier_id = ? AND status != 'cancelled'", s.id),
+    docCount: val<number>('SELECT COUNT(*) FROM attachments WHERE supplier_id = ?', s.id),
   };
-})));
+}
+
+supplyRouter.get('/suppliers', h((req) => q('SELECT * FROM suppliers WHERE org_id = ? AND deleted_at IS NULL ORDER BY name', req.user.orgId).map(scorecard)));
+
+/**
+ * One supplier: scorecard, purchase orders and — per item bought — every price paid over
+ * time, compared with the item's current cost and with what other suppliers last charged.
+ */
+supplyRouter.get('/suppliers/:id', h((req) => {
+  const supplier = one('SELECT * FROM suppliers WHERE id = ? AND org_id = ?', req.params.id, req.user.orgId);
+  if (!supplier) throw new HttpError(404, 'تأمین‌کننده پیدا نشد');
+  const purchases = q(
+    `SELECT l.item_id, l.qty, l.received_qty, l.unit_cost, p.id AS po_id, p.number AS po_number, p.status,
+       COALESCE(p.ordered_at, p.created_at) AS at, i.name, i.sku, i.unit, i.cost AS current_cost
+     FROM po_lines l JOIN purchase_orders p ON p.id = l.po_id JOIN items i ON i.id = l.item_id
+     WHERE p.supplier_id = ? AND p.status != 'cancelled' ORDER BY at`, supplier.id,
+  );
+  const byItem = new Map<string, Row[]>();
+  for (const row of purchases) byItem.set(row.itemId, [...(byItem.get(row.itemId) ?? []), row]);
+  const items = [...byItem.values()].map((rows) => {
+    const first = rows[0];
+    const last = rows.at(-1)!;
+    const prices = rows.map((r) => r.unitCost).filter((c) => c > 0);
+    // What the other suppliers charged most recently for the same item.
+    const others = q(
+      `SELECT s.id AS supplier_id, s.name AS supplier_name, l.unit_cost, COALESCE(p.ordered_at, p.created_at) AS at
+       FROM po_lines l JOIN purchase_orders p ON p.id = l.po_id JOIN suppliers s ON s.id = p.supplier_id
+       WHERE l.item_id = ? AND p.supplier_id != ? AND p.status != 'cancelled' AND p.org_id = ? AND l.unit_cost > 0
+       ORDER BY at DESC`, first.itemId, supplier.id, req.user.orgId,
+    ).filter((r, i, all) => all.findIndex((x) => x.supplierId === r.supplierId) === i);
+    return {
+      itemId: first.itemId, name: first.name, sku: first.sku, unit: first.unit, currentCost: first.currentCost,
+      timesBought: rows.length,
+      totalQty: rows.reduce((sum, r) => sum + r.qty, 0),
+      totalSpend: rows.reduce((sum, r) => sum + r.qty * r.unitCost, 0),
+      firstPrice: first.unitCost, firstAt: first.at,
+      lastPrice: last.unitCost, lastAt: last.at,
+      minPrice: prices.length ? Math.min(...prices) : 0,
+      maxPrice: prices.length ? Math.max(...prices) : 0,
+      changePct: first.unitCost > 0 ? Math.round(((last.unitCost - first.unitCost) / first.unitCost) * 1000) / 10 : null,
+      history: rows.map((r) => ({ at: r.at, price: r.unitCost, qty: r.qty, poId: r.poId, poNumber: r.poNumber })),
+      others,
+    };
+  }).sort((a, b) => b.lastAt - a.lastAt);
+  return {
+    supplier: scorecard(supplier),
+    purchaseOrders: poWithTotals('p.supplier_id = ? AND p.org_id = ? AND p.deleted_at IS NULL', supplier.id, req.user.orgId),
+    items,
+    defaultFor: q('SELECT id, name, sku, unit, cost FROM items WHERE supplier_id = ? AND deleted_at IS NULL ORDER BY name', supplier.id),
+    activity: q("SELECT * FROM activity WHERE entity_type = 'supplier' AND entity_id = ? ORDER BY at DESC LIMIT 40", supplier.id),
+  };
+}));
 
 supplyRouter.post('/suppliers', h((req) => {
   if (!req.body?.name?.trim()) throw new HttpError(400, 'نام تأمین‌کننده الزامی است');
@@ -266,7 +321,7 @@ function poWithTotals(where: string, ...params: (string | number)[]) {
   }));
 }
 
-supplyRouter.get('/purchase-orders', h((req) => poWithTotals('p.org_id = ?', req.user.orgId)));
+supplyRouter.get('/purchase-orders', h((req) => poWithTotals('p.org_id = ? AND p.deleted_at IS NULL', req.user.orgId)));
 
 supplyRouter.get('/purchase-orders/:id', h((req) => {
   const po = poWithTotals('p.id = ? AND p.org_id = ?', req.params.id, req.user.orgId)[0];
@@ -309,7 +364,7 @@ const PO_FLOW = ['draft', 'sent', 'confirmed', 'in_transit', 'partial', 'receive
 supplyRouter.post('/suppliers/bulk-delete', h((req) => bulkDelete(req.user, req.body?.ids, {
   table: 'suppliers', entity: 'supplier', noun: 'تأمین‌کننده',
   label: (s) => s.name,
-  check: (s) => (val<number>('SELECT COUNT(*) FROM purchase_orders WHERE supplier_id = ?', s.id) ? 'سفارش خرید ثبت‌شده دارد' : null),
+  linkedReason: (s) => (val<number>('SELECT COUNT(*) FROM purchase_orders WHERE supplier_id = ?', s.id) ? 'سفارش‌های خریدش حفظ شد' : null),
   remove: (s) => {
     run('UPDATE items SET supplier_id = NULL WHERE supplier_id = ?', s.id);
     run('DELETE FROM suppliers WHERE id = ?', s.id);
@@ -320,13 +375,15 @@ supplyRouter.post('/suppliers/bulk-delete', h((req) => bulkDelete(req.user, req.
 supplyRouter.post('/purchase-orders/bulk-delete', h((req) => bulkDelete(req.user, req.body?.ids, {
   table: 'purchase_orders', entity: 'po', noun: 'سفارش خرید',
   label: (p) => p.number,
-  check: (p) => {
-    if (!['draft', 'cancelled'].includes(p.status)) return 'فقط پیش‌نویس یا سفارش لغوشده قابل حذف است';
-    if (val<number>('SELECT COALESCE(SUM(received_qty), 0) FROM po_lines WHERE po_id = ?', p.id) > 0) return 'کالایی از آن رسید شده';
-    if (val<number>("SELECT COUNT(*) FROM stock_moves WHERE ref_type = 'po' AND ref_id = ?", p.id)) return 'در دفتر انبار گردش دارد';
-    if (val<number>("SELECT COUNT(*) FROM expenses WHERE ref_type = 'po' AND ref_id = ?", p.id)) return 'هزینه ثبت‌شده دارد';
+  linkedReason: (p) => {
+    if (val<number>('SELECT COALESCE(SUM(received_qty), 0) FROM po_lines WHERE po_id = ?', p.id) > 0) return 'رسید انبارش حفظ شد';
+    if (val<number>("SELECT COUNT(*) FROM stock_moves WHERE ref_type = 'po' AND ref_id = ?", p.id)) return 'گردش انبارش حفظ شد';
+    if (val<number>("SELECT COUNT(*) FROM expenses WHERE ref_type = 'po' AND ref_id = ?", p.id)) return 'هزینه‌هایش حفظ شد';
+    if (!['draft', 'cancelled'].includes(p.status)) return 'ارسال شده بود؛ لغو و بایگانی شد';
     return null;
   },
+  // An open purchase stops counting as "incoming" once it is gone.
+  beforeArchive: (p) => { if (!['received', 'cancelled'].includes(p.status)) run("UPDATE purchase_orders SET status = 'cancelled' WHERE id = ?", p.id); },
   remove: (p) => {
     unlinkTasks('po', p.id);
     run('DELETE FROM purchase_orders WHERE id = ?', p.id); // lines cascade
