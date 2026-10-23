@@ -6,6 +6,7 @@ import {
   Factory, Cpu, LifeBuoy, Wallet, ListChecks, Settings, PanelRightClose, PanelRightOpen, LogOut, Search, Bell, Warehouse,
   Plus, ChevronLeft, ChevronRight, AlertTriangle, AlertOctagon, Info, CornerDownLeft, UserPlus, FileText, Wrench, PackagePlus,
   Route, X, ChevronDown, StickyNote, type LucideIcon,
+  Cog,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { api } from '../lib/api';
@@ -38,6 +39,7 @@ const SECTIONS: NavSection[] = [
       { to: '/crm/leads', label: 'سرنخ‌های داغ', tab: 'سرنخ داغ', icon: Flame, hint: 'بیشترین احتمال خرید' },
       { to: '/crm/followups', label: 'پیگیری‌ها', tab: 'پیگیری', icon: PhoneCall, badge: 'followups', hint: 'صف تماس‌های امروز' },
       { to: '/crm/map', label: 'نقشه عملیات', short: 'نقشه', icon: Map, hint: 'پراکندگی مشتریان' },
+      { to: '/crm/machines', label: 'کنترلرها و ماشین‌ها', short: 'کنترلرها', tab: 'کنترلر', icon: Cog, hint: 'آمار کنترلرهای مشتریان' },
     ],
     create: [['مشتری / مخاطب', '/crm/contacts?new=1', UserPlus]],
   },

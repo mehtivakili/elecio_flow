@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  Settings, Building, Workflow, Users, Target, ClipboardCheck, Tags, Save, Plus, Trash2, ArrowUp, ArrowDown, ShieldCheck, Lock, RotateCcw, DatabaseBackup, Archive, ReceiptText,
+  Settings, Building, Workflow, Users, Target, ClipboardCheck, Tags, Save, Plus, Trash2, ArrowUp, ArrowDown, ShieldCheck, Lock, RotateCcw, DatabaseBackup, Archive, ReceiptText, Cog,
 } from 'lucide-react';
 import {
   ELECIO_DEFAULTS, MODULES, ROLES, ROLE_LABELS, ROLE_MODULES, type CustomFieldDef, type OptionDef, type StageDef, type WorkspaceSettings,
@@ -12,9 +12,10 @@ import { useSession } from '../lib/session';
 import { Button, Card, Field, Input, PageHeader, Pill, Select, Tabs, Textarea, Toggle, useConfirm } from '../components/ui';
 import { num } from '../lib/format';
 import { ArchiveAdmin, BackupAdmin, UsersAdmin } from '../components/admin';
+import { ControllersAdmin } from '../components/machines';
 
-type Tab = 'company' | 'invoice' | 'workflows' | 'crm' | 'service' | 'users' | 'tags' | 'backup' | 'archive';
-const TABS: Tab[] = ['company', 'invoice', 'workflows', 'crm', 'service', 'users', 'tags', 'backup', 'archive'];
+type Tab = 'company' | 'invoice' | 'controllers' | 'workflows' | 'crm' | 'service' | 'users' | 'tags' | 'backup' | 'archive';
+const TABS: Tab[] = ['company', 'invoice', 'controllers', 'workflows', 'crm', 'service', 'users', 'tags', 'backup', 'archive'];
 
 const GATES: Record<string, string> = {
   '': 'بدون کنترل', deposit: 'پیش‌پرداخت', full_payment: 'تسویه کامل', allocation: 'تخصیص کالا', shipment: 'ثبت محموله', kitting: 'کیتینگ قطعات', qc_pass: 'قبولی QC',
@@ -47,13 +48,14 @@ export default function SettingsPage() {
     <div>
       <PageHeader icon={Settings} title="تنظیمات فضای کار" subtitle="همه مراحل، برچسب‌ها و قواعد سیستم قابل تنظیم است — پیش‌فرض‌ها مطابق فرایند الکیو تنظیم شده‌اند" />
       <Tabs className="mb-6 w-fit" value={tab} onChange={setTab} tabs={[
-        { key: 'company', label: 'سازمان', icon: Building }, { key: 'invoice', label: 'قالب فاکتور', icon: ReceiptText },
+        { key: 'company', label: 'سازمان', icon: Building }, { key: 'invoice', label: 'قالب فاکتور', icon: ReceiptText }, { key: 'controllers', label: 'کنترلرها', icon: Cog },
         { key: 'workflows', label: 'جریان‌های کاری', icon: Workflow },
         { key: 'crm', label: 'CRM و امتیازدهی', icon: Target }, { key: 'service', label: 'کیفیت و خدمات', icon: ClipboardCheck },
         { key: 'users', label: 'کاربران و دسترسی', icon: Users }, { key: 'tags', label: 'برچسب‌ها', icon: Tags },
         { key: 'backup', label: 'پشتیبان‌گیری', icon: DatabaseBackup }, { key: 'archive', label: 'بایگانی', icon: Archive },
       ]} />
       {tab === 'backup' && <BackupAdmin />}
+      {tab === 'controllers' && <ControllersAdmin />}
       {tab === 'archive' && <ArchiveAdmin />}
 
       {tab === 'company' && (

@@ -10,7 +10,8 @@ import { ToastProvider } from './lib/toast';
 import { ConfirmProvider } from './components/ui';
 
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false, staleTime: 15_000 } },
+  // Coming back to the window re-reads the data, so changes made on another device or tab show up.
+  defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: true, staleTime: 15_000 } },
 });
 
 createRoot(document.getElementById('root')!).render(

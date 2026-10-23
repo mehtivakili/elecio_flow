@@ -10,6 +10,7 @@ import PipelinePage from './pages/crm/PipelinePage';
 import LeadsPage from './pages/crm/LeadsPage';
 import FollowupsPage from './pages/crm/FollowupsPage';
 import MapPage from './pages/crm/MapPage';
+import MachinesPage from './pages/crm/MachinesPage';
 import OrdersPage from './pages/sales/OrdersPage';
 import OrderPage from './pages/sales/OrderPage';
 import PurchaseOrdersPage from './pages/scm/PurchaseOrdersPage';
@@ -46,6 +47,7 @@ export default function App() {
           <Route path="crm/leads" element={<LeadsPage />} />
           <Route path="crm/followups" element={<FollowupsPage />} />
           <Route path="crm/map" element={<MapPage />} />
+          <Route path="crm/machines" element={<MachinesPage />} />
           <Route path="sales/orders" element={<OrdersPage />} />
           <Route path="sales/orders/:id" element={<OrderPage />} />
           <Route path="scm/purchase-orders" element={<PurchaseOrdersPage />} />

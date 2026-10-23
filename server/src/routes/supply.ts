@@ -146,6 +146,15 @@ inventoryRouter.get('/stock', h((req) => q(
    WHERE s.org_id = ? AND i.deleted_at IS NULL AND (s.qty != 0 OR s.reserved != 0) ORDER BY w.created_at, i.name`, req.user.orgId,
 )));
 
+/** The current level of one item in one warehouse, read straight from the database (for the correction dialog). */
+inventoryRouter.get('/stock/level', h((req) => {
+  const { itemId, warehouseId } = req.query as Record<string, string>;
+  const item = mustFind('items', itemId, req.user.orgId, 'کالا');
+  const warehouse = mustFind('warehouses', warehouseId, req.user.orgId, 'انبار');
+  const s = one('SELECT qty, reserved FROM stock WHERE item_id = ? AND warehouse_id = ?', item.id, warehouse.id);
+  return { itemId: item.id, warehouseId: warehouse.id, name: item.name, unit: item.unit, warehouseName: warehouse.name, qty: s?.qty ?? 0, reserved: s?.reserved ?? 0 };
+}));
+
 /** Set an absolute counted quantity while keeping the difference in the stock ledger. */
 inventoryRouter.post('/stock/adjust', h((req) => {
   const b = req.body ?? {};
@@ -161,6 +170,11 @@ inventoryRouter.post('/stock/adjust', h((req) => {
       'SELECT qty, reserved FROM stock WHERE org_id = ? AND item_id = ? AND warehouse_id = ?',
       req.user.orgId, item.id, warehouse.id,
     ) ?? { qty: 0, reserved: 0 };
+    // The dialog sends the level it showed; if stock moved since (another user or device), stop
+    // instead of correcting from a number nobody saw.
+    if (b.expectedQty !== undefined && b.expectedQty !== null && Number(b.expectedQty) !== stock.qty) {
+      throw new HttpError(409, `موجودی این کالا در این فاصله تغییر کرده و اکنون ${stock.qty} ${item.unit} است؛ عدد را دوباره بررسی کنید`, { currentQty: stock.qty, reserved: stock.reserved });
+    }
     if (countedQty < stock.reserved) {
       throw new HttpError(409, `موجودی شمارش‌شده نمی‌تواند از مقدار رزروشده (${stock.reserved} ${item.unit}) کمتر باشد`);
     }

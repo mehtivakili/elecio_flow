@@ -13,6 +13,7 @@ import { financeRouter, insightsRouter, tasksRouter } from './routes/insights.ts
 import { adminRouter, runScheduledBackup } from './routes/admin.ts';
 import { notesRouter } from './routes/notes.ts';
 import { filesRouter } from './routes/files.ts';
+import { machinesRouter } from './routes/machines.ts';
 import { DB_PATH, closeDb } from './db.ts';
 import { rescoreOrg } from './services/crm.ts';
 import { seed } from './seed.ts';
@@ -33,12 +34,14 @@ if (!val<number>('SELECT COUNT(*) FROM orgs')) {
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
+// API answers are live data (stock, orders…): never let a browser, proxy or CDN serve an old copy.
+app.use('/api', (_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 app.use('/api/auth', authRouter);
 app.use('/api', metaRouter);
 app.use('/api', requireAuth, crmRouter, inventoryRouter, supplyRouter, ordersRouter, productionRouter, unitsRouter,
-  serviceRouter, tasksRouter, financeRouter, insightsRouter, notesRouter, adminRouter, filesRouter);
+  serviceRouter, tasksRouter, financeRouter, insightsRouter, notesRouter, adminRouter, filesRouter, machinesRouter);
 app.use('/api', (_req, res) => res.status(404).json({ error: 'مسیر API پیدا نشد' }));
 app.use(errorHandler);
 

@@ -1,16 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
-import { Plus, Trash2, MapPin, Phone, Users as UsersIcon, Target, PhoneCall, CalendarPlus, Sparkles, AlertTriangle, Search, LocateFixed } from 'lucide-react';
+import { Plus, Trash2, MapPin, Phone, Users as UsersIcon, Target, PhoneCall, CalendarPlus, Sparkles, AlertTriangle, Search, LocateFixed, Cog } from 'lucide-react';
 import clsx from 'clsx';
 import { IRAN_CENTER, IRAN_PROVINCES, getProvince } from '@shared/iran-locations';
 import { CALL_OUTCOMES, INTERACTION_TYPES } from '@shared/defaults';
-import { post, put } from '../lib/api';
+import { api, post, put } from '../lib/api';
 import { useAction } from '../lib/hooks';
 import { useSession } from '../lib/session';
 import { useToast } from '../lib/toast';
 import { Button, Field, Input, Modal, MoneyInput, Select, Stars, Textarea, Toggle } from './ui';
 import { ChipSelect, DateInput } from './inputs';
 import { UserPicker } from './domain';
+import { MachinesEditor, newRow, type MachineRow } from './machines';
 import { num } from '../lib/format';
 
 /* ───────────────────────── Map location picker ───────────────────────── */
@@ -146,7 +147,10 @@ const STEPS = [
   { n: 1, label: 'هویت و منبع', icon: UsersIcon },
   { n: 2, label: 'تماس و آدرس', icon: MapPin },
   { n: 3, label: 'ارزیابی سرنخ', icon: Target },
+  { n: 4, label: 'ماشین‌ها', icon: Cog },
 ];
+/** Summary fields now kept in sync from the machine list (step 4) — not edited by hand. */
+const MACHINE_FIELDS = ['machines', 'controllers'];
 
 export function ContactFormModal({ open, onClose, contact, onSaved }: { open: boolean; onClose: () => void; contact?: any; onSaved?: (id: string) => void }) {
   const { settings, tags, me } = useSession();
@@ -160,9 +164,17 @@ export function ContactFormModal({ open, onClose, contact, onSaved }: { open: bo
     ownerId: me.id, addresses: [emptyAddress()],
   });
   const [form, setForm] = useState(blank);
+  const [machines, setMachines] = useState<MachineRow[]>([]);
+  const [machinesDirty, setMachinesDirty] = useState(false);
   useEffect(() => {
     if (!open) return;
     setStep(1); setDupes(null);
+    setMachines([]); setMachinesDirty(false);
+    if (contact?.id) {
+      api<any[]>(`/contacts/${contact.id}/machines`)
+        .then((rows) => setMachines(rows.map((r) => newRow({ id: r.id, controllerBrand: r.controllerBrand, controllerModel: r.controllerModel, qty: r.qty }))))
+        .catch(() => { /* the tab shows the list empty; saving without changes leaves machines untouched */ });
+    }
     setForm(contact ? {
       ...blank(), ...contact,
       phones: contact.phones?.length ? contact.phones : [{ type: 'mobile', value: '' }],
@@ -176,7 +188,7 @@ export function ContactFormModal({ open, onClose, contact, onSaved }: { open: bo
   const setAddr = (i: number, patch: Partial<AddressForm>) => set({ addresses: form.addresses.map((a, j) => (j === i ? { ...a, ...patch } : a)) });
 
   const save = useAction(
-    (allowDuplicate: boolean) => {
+    async (allowDuplicate: boolean) => {
       const body = {
         ...form,
         allowDuplicate,
@@ -184,7 +196,13 @@ export function ContactFormModal({ open, onClose, contact, onSaved }: { open: bo
         emails: form.emails.filter((e) => e.trim()),
         addresses: form.addresses.filter((a) => a.province || a.address || a.lat),
       };
-      return contact ? put(`/contacts/${contact.id}`, body) : post('/contacts', body);
+      const r = contact ? await put(`/contacts/${contact.id}`, body) : await post('/contacts', body);
+      const id: string = contact?.id ?? r.id;
+      // The machine list is saved with the customer (only when it was touched).
+      if (machinesDirty) {
+        await put(`/contacts/${id}/machines`, { machines: machines.map(({ id: mid, controllerBrand, controllerModel, qty }) => ({ id: mid, controllerBrand, controllerModel, qty })) });
+      }
+      return { id };
     },
     {
       success: contact ? 'اطلاعات مخاطب به‌روز شد' : 'مخاطب جدید ثبت شد',
@@ -212,23 +230,23 @@ export function ContactFormModal({ open, onClose, contact, onSaved }: { open: bo
           </div>
         )}
         {step > 1 && <Button variant="ghost" onClick={() => setStep(step - 1)}>مرحله قبل</Button>}
-        {step < 3
+        {step < STEPS.length
           ? <Button variant="action" disabled={!canNext} onClick={() => setStep(step + 1)}>مرحله بعد</Button>
           : null}
         <Button variant="primary" loading={save.isPending} disabled={!form.name.trim()} onClick={() => save.mutate(false)}>ذخیره</Button>
       </>}
     >
-      <div className="mb-6 flex items-center gap-2">
+      <div className="mb-6 flex items-center gap-1.5 sm:gap-2">
         {STEPS.map((s, i) => (
-          <div key={s.n} className="flex flex-1 items-center gap-2">
+          <div key={s.n} className="flex min-w-0 flex-1 items-center gap-2">
             <button
               onClick={() => (s.n < step || canNext) && setStep(s.n)}
-              className={clsx('flex flex-1 items-center gap-2 rounded-xl border px-3 py-2 text-sm transition',
+              className={clsx('flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl border px-1 py-2 text-[11px] leading-4 transition sm:flex-row sm:gap-2 sm:px-3 sm:text-sm',
                 step === s.n ? 'border-iris bg-iris/15 text-ink' : s.n < step ? 'border-line text-frost' : 'border-line/60 text-mist')}
             >
-              <s.icon size={16} /> {s.label}
+              <s.icon size={16} className="shrink-0" /> <span className="w-full truncate text-center sm:w-auto sm:text-right">{s.label}</span>
             </button>
-            {i < STEPS.length - 1 && <span className="h-px w-3 bg-line" />}
+            {i < STEPS.length - 1 && <span className="hidden h-px w-3 bg-line sm:block" />}
           </div>
         ))}
       </div>
@@ -329,7 +347,7 @@ export function ContactFormModal({ open, onClose, contact, onSaved }: { open: bo
 
       {step === 3 && (
         <div className="grid gap-4 sm:grid-cols-2">
-          {settings.customFields.map((f) => (
+          {settings.customFields.filter((f) => !MACHINE_FIELDS.includes(f.key)).map((f) => (
             <Field key={f.key} label={f.label} className={f.type === 'multiselect' ? 'sm:col-span-2' : ''}>
               {f.type === 'multiselect' ? (
                 <ChipSelect options={(f.options ?? []).map((o) => ({ value: o, label: o }))} value={form.attrs[f.key] ?? []} onChange={(v) => set({ attrs: { ...form.attrs, [f.key]: v } })} />
@@ -352,6 +370,14 @@ export function ContactFormModal({ open, onClose, contact, onSaved }: { open: bo
           <Field label="یادداشت" className="sm:col-span-2"><Textarea value={form.notes} onChange={(e) => set({ notes: e.target.value })} /></Field>
           <Toggle checked={form.starred} onChange={(v) => set({ starred: v })} label="نشان‌دار (اولویت فروش)" />
         </div>
+      )}
+
+      {step === 4 && (
+        <MachinesEditor
+          rows={machines}
+          onChange={(rows) => { setMachines(rows); setMachinesDirty(true); }}
+          legacy={{ controllers: Array.isArray(form.attrs.controllers) ? form.attrs.controllers : [], machines: Number(form.attrs.machines) || 0 }}
+        />
       )}
     </Modal>
   );

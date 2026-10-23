@@ -678,6 +678,82 @@ const MIGRATIONS: { version: number; run: (database: DatabaseSync) => void }[] =
       `);
     },
   },
+  {
+    // The CNC machines at each customer / lead: controller brand (required), controller model,
+    // machine maker / model / type (optional), how many, and how many run an Elecio device.
+    // controller_models keeps the models a workspace adds beyond the built-in catalogue.
+    version: 3,
+    run: (d) => {
+      d.exec(`
+        CREATE TABLE IF NOT EXISTS machines (
+          id TEXT PRIMARY KEY,
+          org_id TEXT NOT NULL,
+          contact_id TEXT NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+          address_id TEXT,
+          controller_brand TEXT NOT NULL,
+          controller_model TEXT NOT NULL DEFAULT '',
+          machine_maker TEXT NOT NULL DEFAULT '',
+          machine_model TEXT NOT NULL DEFAULT '',
+          machine_type TEXT NOT NULL DEFAULT '',
+          year INTEGER,
+          qty INTEGER NOT NULL DEFAULT 1,
+          elecio_qty INTEGER NOT NULL DEFAULT 0,
+          notes TEXT NOT NULL DEFAULT '',
+          created_by TEXT,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_machines_contact ON machines(contact_id);
+        CREATE INDEX IF NOT EXISTS idx_machines_org_brand ON machines(org_id, controller_brand, controller_model);
+
+        CREATE TABLE IF NOT EXISTS controller_models (
+          id TEXT PRIMARY KEY,
+          org_id TEXT NOT NULL,
+          brand TEXT NOT NULL,
+          model TEXT NOT NULL,
+          created_by TEXT,
+          created_at INTEGER NOT NULL,
+          UNIQUE (org_id, brand, model)
+        );
+      `);
+    },
+  },
+  {
+    // Controller brands a workspace adds beside the built-in ones (they can be removed again).
+    version: 4,
+    run: (d) => {
+      d.exec(`
+        CREATE TABLE IF NOT EXISTS controller_brands (
+          key TEXT NOT NULL,
+          org_id TEXT NOT NULL,
+          label TEXT NOT NULL,
+          color TEXT NOT NULL DEFAULT '#9DB4C0',
+          created_by TEXT,
+          created_at INTEGER NOT NULL,
+          PRIMARY KEY (org_id, key)
+        );
+      `);
+    },
+  },
+  {
+    // One row per machine: machines of the same brand usually have different controller
+    // models, so a row counting several machines is split into separate machines.
+    version: 5,
+    run: (d) => {
+      const rows = d.prepare('SELECT * FROM machines WHERE qty > 1').all() as Record<string, any>[];
+      const insertCopy = d.prepare(
+        `INSERT INTO machines (id, org_id, contact_id, address_id, controller_brand, controller_model, machine_maker, machine_model, machine_type, year, qty, elecio_qty, notes, created_by, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?, ?, ?)`,
+      );
+      for (const r of rows) {
+        for (let n = 1; n < r.qty; n++) {
+          insertCopy.run(`${r.id}_${n}`, r.org_id, r.contact_id, r.address_id, r.controller_brand, r.controller_model, r.machine_maker, r.machine_model,
+            r.machine_type, r.year, r.notes, r.created_by, r.created_at + n, r.updated_at);
+        }
+        d.prepare('UPDATE machines SET qty = 1, elecio_qty = MIN(elecio_qty, 1) WHERE id = ?').run(r.id);
+      }
+    },
+  },
 ];
 
 function migrate(database: DatabaseSync) {

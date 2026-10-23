@@ -38,6 +38,8 @@ body {
 
 .ltr { direction: ltr; unicode-bidi: isolate; }
 .num { font-feature-settings: "ss02", "tnum"; }
+/* Technical codes (controller / machine models such as TNC 640, 0i-MF) keep Latin digits */
+.code { font-feature-settings: normal; }
 
 /* ───── Background grid with radial fade (GridBackground from source 2) ───── */
 .grid-bg {

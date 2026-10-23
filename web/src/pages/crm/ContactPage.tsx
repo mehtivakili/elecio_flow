@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   Building2, PhoneCall, Pencil, FileText, Wrench, Star, MapPin, Mail, Globe, Gauge, Clock, Check, AlarmClock, Trash2,
-  ShoppingCart, Cpu, LifeBuoy, History, UserCheck, Share2, ReceiptText, Paperclip, Plus, ChevronLeft,
+  ShoppingCart, Cpu, LifeBuoy, History, UserCheck, Share2, ReceiptText, Paperclip, Plus, ChevronLeft, Cog,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { CALL_OUTCOMES, INTERACTION_TYPES } from '@shared/defaults';
@@ -17,6 +17,7 @@ import { ScoreMeter } from '../../components/charts';
 import { ContactPeople } from '../../components/people';
 import { LegacySaleModal } from '../../components/legacy';
 import { DocumentsCard } from '../../components/documents';
+import { MachinesTab } from '../../components/machines';
 import { InvoiceDialog, type InvoiceKind } from '../../components/invoice';
 import { compactMoney, date, dateTime, money, num, relative } from '../../lib/format';
 
@@ -26,7 +27,8 @@ export default function ContactPage() {
   const confirm = useConfirm();
   const { settings, tags, userName, lifecycle, isAdmin } = useSession();
   const { data, isLoading } = useApi<any>(`/contacts/${id}`);
-  const [tab, setTab] = useState<'timeline' | 'orders' | 'docs' | 'units' | 'tickets'>('timeline');
+  const [tab, setTab] = useState<'timeline' | 'machines' | 'orders' | 'docs' | 'units' | 'tickets'>('timeline');
+  const { data: machines = [] } = useApi<any[]>(`/contacts/${id}/machines`);
   const { data: docs = [] } = useApi<any[]>(`/attachments?contactId=${id}`);
   const [picking, setPicking] = useState<InvoiceKind | null>(null);
   const [invoice, setInvoice] = useState<{ orderId: string; kind: InvoiceKind } | null>(null);
@@ -212,6 +214,7 @@ export default function ContactPage() {
             onChange={setTab}
             tabs={[
               { key: 'timeline', label: 'تاریخچه ارتباط', icon: History, count: timeline.length },
+              { key: 'machines', label: 'ماشین‌ها', icon: Cog, count: machines.reduce((s: number, m: any) => s + m.qty, 0) },
               { key: 'orders', label: 'فروش‌ها', icon: ShoppingCart, count: data.orders.length },
               { key: 'docs', label: 'فاکتورها و اسناد', icon: Paperclip, count: docs.length },
               { key: 'units', label: 'دستگاه‌ها', icon: Cpu, count: data.units.length },
@@ -245,6 +248,8 @@ export default function ContactPage() {
               )}
             </Card>
           )}
+
+          {tab === 'machines' && <MachinesTab contact={c} />}
 
           {tab === 'docs' && (
             <DocumentsCard scope={{ contactId: c.id }} side="sales"
